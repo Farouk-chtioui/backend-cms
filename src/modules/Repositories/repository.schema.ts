@@ -61,7 +61,7 @@ export class Repository extends Document {
   name: string;
 
   @Prop({ required: true })
-  owner: string;  // User ID
+  owner?: string;  // User ID
 
   @Prop({ type: [MobileAppSchema], default: [] })
   mobileApps: MobileApp[];

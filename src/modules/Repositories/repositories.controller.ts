@@ -7,7 +7,18 @@ import { MobileApp } from '../mobile-app/mobile-app.schema';
 export class RepositoriesController {
   constructor(private readonly repositoriesService: RepositoriesService) {}
 
-  // Create Mobile App
+  // Create Repository
+  
+  @Post()
+  async createRepository(@Body() body: { name: string; owner: string }): Promise<Repository> {
+    const { name, owner } = body;
+    return this.repositoriesService.createRepository(name, owner);
+  }
+
+  @Get(':repoId')
+  async getRepositoryById(@Param('repoId') repoId: string): Promise<Repository> {
+    return this.repositoriesService.getRepositoryById(repoId);
+  }
   @Post(':repoId/mobile-apps')
   async createMobileApp(@Param('repoId') repoId: string, @Body('name') appName: string): Promise<Repository> {
     return this.repositoriesService.createMobileApp(repoId, appName);
@@ -42,5 +53,10 @@ export class RepositoriesController {
   @Delete(':repoId/mobile-apps/:appId')
   async deleteMobileApp(@Param('repoId') repoId: string, @Param('appId') appId: string): Promise<Repository> {
     return this.repositoriesService.deleteMobileApp(repoId, appId);
+  }
+  @Get('default/:userId')
+  async getDefaultRepository(@Param('userId') userId: string) {
+    // Fetch the default repository based on the user ID
+    return this.repositoriesService.getDefaultRepository(userId);
   }
 }

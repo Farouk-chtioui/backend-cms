@@ -4,21 +4,19 @@ import { Model } from 'mongoose';
 import { Repository } from './repository.schema';
 import { MobileApp } from '../mobile-app/mobile-app.schema';
 import { LiveUpdatesGateway } from '../../live-updates/live-updates.gateway';
-import { Types } from 'mongoose';  // Import Types to work with ObjectId
+import { Types } from 'mongoose';  
 
 @Injectable()
 export class RepositoriesService {
   constructor(
     @InjectModel(Repository.name) private repoModel: Model<Repository>,
-    private gateway: LiveUpdatesGateway,  // Inject the WebSocket gateway
+    private gateway: LiveUpdatesGateway,  
   ) {}
 
-  // Create Mobile App
   async createMobileApp(repoId: string, appName: string): Promise<Repository> {
     const repository = await this.repoModel.findById(repoId);
     if (!repository) throw new NotFoundException('Repository not found');
 
-    // Create a new mobile app using MobileApp class constructor
     const newMobileApp = new MobileApp({
       _id: new Types.ObjectId(),
       name: appName,
@@ -37,14 +35,40 @@ export class RepositoriesService {
       statusBarTheme: 'light',
     });
 
-    // Push the new mobile app into the mobileApps array
     repository.mobileApps.push(newMobileApp);
 
-    // Save the repository with the new mobile app
     return repository.save();
   }
-
-  // Update Mobile App Theme and Colors
+  async createRepository(name: string, owner: string): Promise<Repository> {
+    const newRepository = new this.repoModel({
+      name,
+      owner,
+      mobileApps: [],
+    });
+    return newRepository.save();
+  }
+  async getRepositoryById(repoId: string): Promise<Repository> {
+    // Check if repoId is valid ObjectId
+    if (!Types.ObjectId.isValid(repoId)) {
+      throw new NotFoundException('Invalid repository ID');
+    }
+  
+    // Cast repoId to ObjectId and fetch the repository
+    const repository = await this.repoModel.findById(new Types.ObjectId(repoId)).exec();
+    if (!repository) {
+      throw new NotFoundException('Repository not found');
+    }
+  
+    return repository;
+  }
+  async getDefaultRepository(userId: string): Promise<Repository> {
+    // Assuming your repository model has a field to link it to a user
+    const repository = await this.repoModel.findOne({ userId }).exec();
+    if (!repository) {
+      throw new NotFoundException('No repository found for this user');
+    }
+    return repository;
+  }
   async updateThemeColors(
     repoId: string,
     appId: string,
@@ -56,7 +80,6 @@ export class RepositoriesService {
     const app = repository.mobileApps.find(app => app._id.toString() === appId);
     if (!app) throw new NotFoundException('Mobile app not found');
 
-    // Update theme colors and other settings
     app.backgroundColor = themeData.backgroundColor || app.backgroundColor;
     app.secondaryBackgroundColor = themeData.secondaryBackgroundColor || app.secondaryBackgroundColor;
     app.mainTextColor = themeData.mainTextColor || app.mainTextColor;
@@ -73,13 +96,11 @@ export class RepositoriesService {
 
     await repository.save();
 
-    // Emit live update via WebSocket
     this.gateway.handleThemeChange({ repoId, appId, themeData });
 
     return repository;
   }
 
-  // Get All Mobile Apps in a Repository
   async getAllMobileApps(repoId: string): Promise<MobileApp[]> {
     const repository = await this.repoModel.findById(repoId);
     if (!repository) throw new NotFoundException('Repository not found');
@@ -87,7 +108,6 @@ export class RepositoriesService {
     return repository.mobileApps;
   }
 
-  // Get a Single Mobile App by ID
   async getMobileAppById(repoId: string, appId: string): Promise<MobileApp> {
     const repository = await this.repoModel.findById(repoId);
     if (!repository) throw new NotFoundException('Repository not found');
@@ -98,7 +118,6 @@ export class RepositoriesService {
     return app;
   }
 
-  // Delete a Mobile App
   async deleteMobileApp(repoId: string, appId: string): Promise<Repository> {
     const repository = await this.repoModel.findById(repoId);
     if (!repository) throw new NotFoundException('Repository not found');
