@@ -1,47 +1,30 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+// src/repository/repository.service.ts
+import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Repository } from './repository.schema';
+import { MobileAppService } from '../mobile-app/mobile-app.service';
 
 @Injectable()
-export class RepositoriesService {
-  constructor(@InjectModel(Repository.name) private repoModel: Model<Repository>) {}
+export class RepositoryService {
+  constructor(
+    @InjectModel(Repository.name) private repositoryModel: Model<Repository>,
+    private readonly mobileAppService: MobileAppService
+  ) {}
 
-  async createRepository(name: string, owner: string): Promise<Repository> {
-    const newRepository = new this.repoModel({
-      name,
-      owner,
+  async createRepository(repoData: any, ownerId: string): Promise<Repository> {
+    const newMobileApp = await this.mobileAppService.createMobileApp(repoData.appName);
+
+    const newRepo = new this.repositoryModel({
+      name: repoData.name,
+      mobileApp: newMobileApp,
+      owner: ownerId
     });
-    return newRepository.save();
+
+    return newRepo.save();
   }
 
-  async getRepositoryById(repoId: string): Promise<Repository> {
-    const repository = await this.repoModel.findById(repoId).exec();
-    if (!repository) {
-      throw new NotFoundException('Repository not found');
-    }
-    return repository;
-  }
-
-  async updateRepositoryName(repoId: string, newName: string): Promise<Repository> {
-    const repository = await this.repoModel.findById(repoId).exec();
-    if (!repository) {
-      throw new NotFoundException('Repository not found');
-    }
-    repository.name = newName;
-    return repository.save();
-  }
-
-  // Get default repository for a user
-  async getDefaultRepository(userId: string): Promise<Repository> {
-    const repository = await this.repoModel.findOne({ owner: userId }).exec();
-    if (!repository) {
-      throw new NotFoundException('No repository found for this user');
-    }
-    return repository;
-  }
-
-  async findByUserId(userId: string): Promise<Repository[]> {
-    return this.repoModel.find({ owner: userId }).exec();
+  async getRepositoriesByUserId(userId: string): Promise<Repository[]> {
+    return this.repositoryModel.find({ owner: userId }).populate('mobileApp').exec();
   }
 }

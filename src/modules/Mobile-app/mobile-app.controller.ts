@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Put, Delete, Body, Param } from '@nestjs/common';
+import { Controller, Post, Get, Put, Body, Param } from '@nestjs/common';
 import { MobileAppService } from './mobile-app.service';
 import { MobileApp } from './mobile-app.schema';
 
@@ -7,22 +7,15 @@ export class MobileAppController {
   constructor(private readonly mobileAppService: MobileAppService) {}
 
   @Post()
-  async createApp(@Body() appData: Partial<MobileApp>): Promise<MobileApp> {
-    return this.mobileAppService.createApp(appData);
+  async createMobileApp(@Body('name') appName: string): Promise<MobileApp> {
+    return this.mobileAppService.createMobileApp(appName);
   }
 
-  @Get(':id')
-  async getAppById(@Param('id') appId: string): Promise<MobileApp> {
-    return this.mobileAppService.getAppById(appId);
-  }
-
-  @Put(':id')
-  async updateApp(@Param('id') appId: string, @Body() updateData: Partial<MobileApp>): Promise<MobileApp> {
-    return this.mobileAppService.updateApp(appId, updateData);
-  }
-
-  @Delete(':id')
-  async deleteApp(@Param('id') appId: string): Promise<void> {
-    return this.mobileAppService.deleteApp(appId);
+  @Put(':id/design')
+  async updateAppDesign(
+    @Param('id') appId: string,
+    @Body() designData: any
+  ): Promise<MobileApp> {
+    return this.mobileAppService.updateAppDesign(appId, designData);
   }
 }

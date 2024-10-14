@@ -1,14 +1,17 @@
-// src/repositories/repositories.module.ts
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-import { RepositoriesService } from './repositories.service';
-import { RepositoriesController } from './repositories.controller';
+import { RepositoryService } from './repositories.service';
+import { RepositoryController } from './repositories.controller';
 import { Repository, RepositorySchema } from './repository.schema';
+import { MobileAppModule } from '../mobile-app/mobile-app.module';
 
 @Module({
-  imports: [MongooseModule.forFeature([{ name: Repository.name, schema: RepositorySchema }])],
-  controllers: [RepositoriesController],
-  providers: [RepositoriesService],
-  exports: [RepositoriesService], // Ensure the service is exported
+  imports: [
+    MongooseModule.forFeature([{ name: Repository.name, schema: RepositorySchema }]),
+    MobileAppModule,
+  ],
+  controllers: [RepositoryController],
+  providers: [RepositoryService],
+  exports: [RepositoryService],
 })
 export class RepositoriesModule {}

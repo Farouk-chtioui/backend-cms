@@ -1,37 +1,33 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+// src/mobile-app/mobile-app.service.ts
+import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { MobileApp } from './mobile-app.schema';
+import { AppDesignService } from '../appDesign/appDesign.service';
 
 @Injectable()
 export class MobileAppService {
-  constructor(@InjectModel(MobileApp.name) private mobileAppModel: Model<MobileApp>) {}
+  constructor(
+    @InjectModel(MobileApp.name) private mobileAppModel: Model<MobileApp>,
+    private readonly appDesignService: AppDesignService
+  ) {}
 
-  async createApp(appData: Partial<MobileApp>): Promise<MobileApp> {
-    const newApp = new this.mobileAppModel(appData);
-    return newApp.save();
+  async createMobileApp(appName: string): Promise<MobileApp> {
+    const newDesign = await this.appDesignService.createAppDesign();  // Create default design
+
+    const newMobileApp = new this.mobileAppModel({
+      name: appName,
+      design: newDesign
+    });
+
+    return newMobileApp.save();
   }
 
-  async getAppById(appId: string): Promise<MobileApp> {
+  async updateAppDesign(appId: string, designData: any): Promise<MobileApp> {
     const app = await this.mobileAppModel.findById(appId).exec();
-    if (!app) {
-      throw new NotFoundException('Mobile app not found');
-    }
-    return app;
-  }
+    if (!app) throw new Error('Mobile App not found');
 
-  async updateApp(appId: string, updateData: Partial<MobileApp>): Promise<MobileApp> {
-    const updatedApp = await this.mobileAppModel.findByIdAndUpdate(appId, updateData, { new: true }).exec();
-    if (!updatedApp) {
-      throw new NotFoundException('Mobile app not found');
-    }
-    return updatedApp;
-  }
-
-  async deleteApp(appId: string): Promise<void> {
-    const result = await this.mobileAppModel.findByIdAndDelete(appId).exec();
-    if (!result) {
-      throw new NotFoundException('Mobile app not found');
-    }
+    app.design = await this.appDesignService.updateAppDesign(app.design._id as string, designData);
+    return app.save();
   }
 }
