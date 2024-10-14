@@ -1,8 +1,6 @@
-// repository.schema.ts
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
 import { MobileApp, MobileAppSchema } from '../mobile-app/mobile-app.schema';
-
 
 @Schema()
 export class Repository extends Document {
@@ -10,10 +8,10 @@ export class Repository extends Document {
   name: string;
 
   @Prop({ required: true })
-  owner?: string;  // User ID
+  owner?: string;  
 
-  @Prop({ type: [MobileAppSchema], default: [] })
-  mobileApps: MobileApp[];
+  @Prop({ type: MobileAppSchema })
+  mobileApp: MobileApp;
 }
 
 export const RepositorySchema = SchemaFactory.createForClass(Repository);

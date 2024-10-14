@@ -3,10 +3,14 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { User } from './user.schema';
 import * as bcrypt from 'bcrypt';
+import { RepositoriesService } from '../repositories/repositories.service'; // Import the RepositoriesService
 
 @Injectable()
 export class UsersService {
-  constructor(@InjectModel(User.name) private userModel: Model<User>) {}
+  constructor(
+    @InjectModel(User.name) private userModel: Model<User>,
+    private repositoriesService: RepositoriesService // Inject the RepositoriesService
+  ) {}
 
   async create(username: string, password: string): Promise<User> {
     try {
@@ -19,21 +23,24 @@ export class UsersService {
       // Hash password and create new user
       const hashedPassword = await bcrypt.hash(password, 10);
       const newUser = new this.userModel({ username, password: hashedPassword });
-      return newUser.save();
+      await newUser.save();
+
+      // Create a default repository for the user
+      await this.repositoriesService.createRepository('my_project', newUser._id.toString());
+
+      return newUser;
     } catch (error) {
       throw new BadRequestException('Error creating user: ' + error.message);
     }
   }
-
   async findOne(username: string): Promise<User> {
     return this.userModel.findOne({ username }).exec();
   }
   async findOneById(userId: string): Promise<User> {
-    // Ensure the userId is cast to ObjectId
     if (!Types.ObjectId.isValid(userId)) {
       throw new NotFoundException('Invalid user ID');
     }
-    const user = await this.userModel.findById(new Types.ObjectId(userId)).exec();  // Use Types.ObjectId
+    const user = await this.userModel.findById(new Types.ObjectId(userId)).exec();
     if (!user) {
       throw new NotFoundException('User not found');
     }

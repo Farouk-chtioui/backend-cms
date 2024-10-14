@@ -1,4 +1,4 @@
-import { Controller, Post,Get, Body, BadRequestException, Param } from '@nestjs/common';
+import { Controller, Post, Get, Body, BadRequestException, Param } from '@nestjs/common';
 import { UsersService } from './users.service';
 
 @Controller('users')
@@ -18,9 +18,9 @@ export class UsersController {
       throw new BadRequestException(error.message);
     }
   }
+
   @Get(':userId')
   async getUserById(@Param('userId') userId: string) {
-    return this.usersService.findOneById(userId); // Add this method in the service
+    return this.usersService.findOneById(userId);
   }
 }
-
