@@ -1,21 +1,23 @@
-import { Controller, Post, Get, Put, Body, Param } from '@nestjs/common';
+import { Controller, Post, Body, Get, Param } from '@nestjs/common';
 import { MobileAppService } from './mobile-app.service';
-import { MobileApp } from './mobile-app.schema';
+import { CreateMobileAppDto } from './dto/create-mobile-app.dto';
 
-@Controller('mobile-apps')
+@Controller('mobile-app')
 export class MobileAppController {
   constructor(private readonly mobileAppService: MobileAppService) {}
 
   @Post()
-  async createMobileApp(@Body('name') appName: string): Promise<MobileApp> {
-    return this.mobileAppService.createMobileApp(appName);
+  async create(@Body() createMobileAppDto: CreateMobileAppDto) {
+    return this.mobileAppService.create(createMobileAppDto);
   }
 
-  @Put(':id/design')
-  async updateAppDesign(
-    @Param('id') appId: string,
-    @Body() designData: any
-  ): Promise<MobileApp> {
-    return this.mobileAppService.updateAppDesign(appId, designData);
+  @Get()
+  async findAll() {
+    return this.mobileAppService.findAll();
+  }
+
+  @Get(':id')
+  async findById(@Param('id') id: string) {
+    return this.mobileAppService.findById(id);
   }
 }

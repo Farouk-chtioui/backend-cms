@@ -3,13 +3,13 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { User } from './user.schema';
 import * as bcrypt from 'bcrypt';
-import { RepositoryService } from '../repositories/repositories.service'; // Import the RepositoriesService
+import { RepositoriesService } from '../repositories/repositories.service'; // Import the RepositoriesService
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectModel(User.name) private userModel: Model<User>,
-    private repositoriesService: RepositoryService // Inject the RepositoriesService
+    private repositoriesService: RepositoriesService // Inject the RepositoriesService
   ) {}
 
   async create(username: string, password: string): Promise<User> {
@@ -26,7 +26,7 @@ export class UsersService {
       await newUser.save();
 
       // Create a default repository for the user
-      await this.repositoriesService.createRepository({ name: 'my_project' }, newUser._id.toString());
+      await this.repositoriesService.create({ repositoryName: 'my_project', ownerId: newUser._id.toString() });
 
       return newUser;
     } catch (error) {
@@ -47,5 +47,8 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
     return user;
+  }
+  async findById(id: string): Promise<User> {
+    return this.userModel.findById(id).exec();
   }
 }

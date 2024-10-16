@@ -1,33 +1,42 @@
-// src/mobile-app/mobile-app.service.ts
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { MobileApp } from './mobile-app.schema';
-import { AppDesignService } from '../appDesign/appDesign.service';
+import { CreateMobileAppDto } from './dto/create-mobile-app.dto';
 
 @Injectable()
 export class MobileAppService {
   constructor(
     @InjectModel(MobileApp.name) private mobileAppModel: Model<MobileApp>,
-    private readonly appDesignService: AppDesignService
   ) {}
 
-  async createMobileApp(appName: string): Promise<MobileApp> {
-    const newDesign = await this.appDesignService.createAppDesign();  // Create default design
+  // Create a MobileApp and link it to a Repository and AppDesign
+  async create(createMobileAppDto: CreateMobileAppDto): Promise<MobileApp> {
+    const { appName, appDesignId, repositoryId, version } = createMobileAppDto;
 
     const newMobileApp = new this.mobileAppModel({
-      name: appName,
-      design: newDesign
+      appName,
+      appDesignId, // Use the ObjectId of AppDesign here
+      repositoryId,
+      version,
     });
 
     return newMobileApp.save();
   }
 
-  async updateAppDesign(appId: string, designData: any): Promise<MobileApp> {
-    const app = await this.mobileAppModel.findById(appId).exec();
-    if (!app) throw new Error('Mobile App not found');
+  async findAll(): Promise<MobileApp[]> {
+    return this.mobileAppModel
+      .find()
+      .populate('repositoryId')
+      .populate('design') // Populate the AppDesign reference
+      .exec();
+  }
 
-    app.design = await this.appDesignService.updateAppDesign(app.design._id as string, designData);
-    return app.save();
+  async findById(id: string): Promise<MobileApp> {
+    return this.mobileAppModel
+      .findById(id)
+      .populate('repositoryId')
+      .populate('design') // Populate the AppDesign reference
+      .exec();
   }
 }
