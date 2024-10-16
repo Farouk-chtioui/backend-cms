@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { MobileAppService } from './mobile-app.service';
 import { MobileAppController } from './mobile-app.controller';
@@ -8,7 +8,7 @@ import { AppDesignModule } from '../appDesign/appDesign.module'; // Import AppDe
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: MobileApp.name, schema: MobileAppSchema }]),
-    AppDesignModule, // Ensure AppDesignModule is imported
+    forwardRef(()=>AppDesignModule) , // Ensure AppDesignModule is imported
   ],
   controllers: [MobileAppController],
   providers: [MobileAppService],

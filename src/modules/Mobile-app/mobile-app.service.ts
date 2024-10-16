@@ -1,13 +1,17 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { MobileApp } from './mobile-app.schema';
+import { AppDesign } from '../appDesign/appDesign.schema';
 import { CreateMobileAppDto } from './dto/create-mobile-app.dto';
 
 @Injectable()
 export class MobileAppService {
+  private readonly logger = new Logger(MobileAppService.name);
+
   constructor(
     @InjectModel(MobileApp.name) private mobileAppModel: Model<MobileApp>,
+    @InjectModel(AppDesign.name) private appDesignModel: Model<AppDesign>
   ) {}
 
   // Create a MobileApp and link it to a Repository and AppDesign
@@ -16,7 +20,7 @@ export class MobileAppService {
 
     const newMobileApp = new this.mobileAppModel({
       appName,
-      appDesignId, // Use the ObjectId of AppDesign here
+      appDesignId, // Reference to AppDesign
       repositoryId,
       version,
     });
@@ -24,19 +28,55 @@ export class MobileAppService {
     return newMobileApp.save();
   }
 
-  async findAll(): Promise<MobileApp[]> {
-    return this.mobileAppModel
-      .find()
-      .populate('repositoryId')
-      .populate('design') // Populate the AppDesign reference
-      .exec();
+  async updateDesign(id: string, designData: Partial<AppDesign>): Promise<MobileApp> {
+    const mobileApp = await this.mobileAppModel.findById(id).populate('appDesignId').exec();
+
+    if (!mobileApp || !mobileApp.appDesignId) {
+      throw new Error('Mobile app or design not found');
+    }
+
+    await this.appDesignModel.findByIdAndUpdate(
+      mobileApp.appDesignId,
+      { $set: designData },
+      { new: true }
+    ).exec();
+
+    return this.mobileAppModel.findById(id).populate('appDesignId').exec();
+  }
+  
+  async findOne(id: string): Promise<MobileApp> {
+    return this.mobileAppModel.findById(id).populate('appDesignId').exec();
   }
 
-  async findById(id: string): Promise<MobileApp> {
-    return this.mobileAppModel
-      .findById(id)
-      .populate('repositoryId')
-      .populate('design') // Populate the AppDesign reference
-      .exec();
+  async updateDesignByRepositoryId(repositoryId: string, designData: Partial<AppDesign>): Promise<MobileApp> {
+    this.logger.debug(`Updating design for repositoryId: ${repositoryId}`);
+    
+    const mobileApp = await this.mobileAppModel.findOne({ repositoryId }).populate('appDesignId').exec();
+    this.logger.debug(`Mobile app found: ${JSON.stringify(mobileApp)}`);
+
+    if (!mobileApp) {
+      this.logger.error(`Mobile app not found for repositoryId: ${repositoryId}`);
+      throw new Error('Mobile app not found');
+    }
+
+    if (!mobileApp.appDesignId) {
+      this.logger.error(`App design not found for mobile app with repositoryId: ${repositoryId}`);
+      throw new Error('App design not found');
+    }
+
+    this.logger.debug(`Found mobile app: ${JSON.stringify(mobileApp)}`);
+    this.logger.debug(`Updating app design with id: ${mobileApp.appDesignId}`);
+
+    const updatedDesign = await this.appDesignModel.findByIdAndUpdate(
+      mobileApp.appDesignId,
+      { $set: designData },
+      { new: true }
+    ).exec();
+    this.logger.debug(`Updated app design: ${JSON.stringify(updatedDesign)}`);
+
+    const updatedMobileApp = await this.mobileAppModel.findOne({ repositoryId }).populate('appDesignId').exec();
+    this.logger.debug(`Updated mobile app: ${JSON.stringify(updatedMobileApp)}`);
+
+    return updatedMobileApp;
   }
 }

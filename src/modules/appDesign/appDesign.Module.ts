@@ -9,6 +9,6 @@ import { AppDesign, AppDesignSchema } from './appDesign.schema';
   imports: [MongooseModule.forFeature([{ name: AppDesign.name, schema: AppDesignSchema }])],
   controllers: [AppDesignController],
   providers: [AppDesignService],
-  exports: [AppDesignService],
+  exports: [AppDesignService, MongooseModule],
 })
 export class AppDesignModule {}

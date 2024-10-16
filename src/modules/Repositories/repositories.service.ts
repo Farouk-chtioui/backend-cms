@@ -4,14 +4,14 @@ import { Model } from 'mongoose';
 import { Repository } from './repository.schema';
 import { CreateRepositoryDto } from './CreateRepositoryDto';
 import { MobileAppService } from '../mobile-app/mobile-app.service';
-import { AppDesignService } from '../appDesign/appDesign.service'; // Import AppDesignService
+import { AppDesignService } from '../appDesign/appDesign.service';
 
 @Injectable()
 export class RepositoriesService {
   constructor(
     @InjectModel(Repository.name) private repositoryModel: Model<Repository>,
     private readonly mobileAppService: MobileAppService,
-    private readonly appDesignService: AppDesignService, // Inject AppDesignService
+    private readonly appDesignService: AppDesignService,
   ) {}
 
   async create(createRepositoryDto: CreateRepositoryDto): Promise<Repository> {
@@ -26,10 +26,9 @@ export class RepositoriesService {
 
     const defaultAppDesign = await this.appDesignService.createAppDesign();
 
- 
     await this.mobileAppService.create({
-      appName: repositoryName, 
-      appDesignId: defaultAppDesign._id.toString(), 
+      appName: repositoryName,
+      appDesignId: defaultAppDesign._id.toString(),
       repositoryId: newRepository._id.toString(),
       version: '',
     });
@@ -48,6 +47,13 @@ export class RepositoriesService {
   async findById(id: string): Promise<Repository> {
     return this.repositoryModel
       .findById(id)
+      .populate('mobileAppId')
+      .populate('ownerId')
+      .exec();
+  }
+  async findByOwnerId(ownerId: string): Promise<Repository[]> {
+    return this.repositoryModel
+      .find({ ownerId })
       .populate('mobileAppId')
       .populate('ownerId')
       .exec();

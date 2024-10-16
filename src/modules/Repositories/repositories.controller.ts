@@ -10,6 +10,13 @@ export class RepositoriesController {
   async create(@Body() createRepositoryDto: CreateRepositoryDto) {
     return this.repositoriesService.create(createRepositoryDto);
   }
-
+  @Get(':ownerId')
+  async findByOwnerId(@Param('ownerId') ownerId: string) {
+    return this.repositoriesService.findByOwnerId(ownerId);
+  }
+  @Get()
+  async findAll() {
+    return this.repositoriesService.findAll();
+  }
  
 }
