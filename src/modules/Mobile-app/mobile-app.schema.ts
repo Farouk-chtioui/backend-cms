@@ -13,7 +13,7 @@ export class MobileApp extends Document {
 
   // Reference to the associated AppDesign using ObjectId
   @Prop({ type: Types.ObjectId, ref: 'AppDesign' })
-  appDesignId: string; // Reference to AppDesign
+  appDesignId: Types.ObjectId; 
 }
 
 export const MobileAppSchema = SchemaFactory.createForClass(MobileApp);

@@ -4,6 +4,7 @@ import { Model } from 'mongoose';
 import { MobileApp } from './mobile-app.schema';
 import { AppDesign } from '../appDesign/appDesign.schema';
 import { CreateMobileAppDto } from './dto/create-mobile-app.dto';
+import * as mongoose from 'mongoose';
 
 @Injectable()
 export class MobileAppService {
@@ -48,35 +49,24 @@ export class MobileAppService {
     return this.mobileAppModel.findById(id).populate('appDesignId').exec();
   }
 
+
   async updateDesignByRepositoryId(repositoryId: string, designData: Partial<AppDesign>): Promise<MobileApp> {
-    this.logger.debug(`Updating design for repositoryId: ${repositoryId}`);
-    
     const mobileApp = await this.mobileAppModel.findOne({ repositoryId }).populate('appDesignId').exec();
-    this.logger.debug(`Mobile app found: ${JSON.stringify(mobileApp)}`);
 
-    if (!mobileApp) {
-      this.logger.error(`Mobile app not found for repositoryId: ${repositoryId}`);
-      throw new Error('Mobile app not found');
+    if (!mobileApp || !mobileApp.appDesignId) {
+      throw new Error('Mobile app or design not found');
     }
 
-    if (!mobileApp.appDesignId) {
-      this.logger.error(`App design not found for mobile app with repositoryId: ${repositoryId}`);
-      throw new Error('App design not found');
-    }
-
-    this.logger.debug(`Found mobile app: ${JSON.stringify(mobileApp)}`);
-    this.logger.debug(`Updating app design with id: ${mobileApp.appDesignId}`);
-
-    const updatedDesign = await this.appDesignModel.findByIdAndUpdate(
+    await this.appDesignModel.findByIdAndUpdate(
       mobileApp.appDesignId,
       { $set: designData },
       { new: true }
     ).exec();
-    this.logger.debug(`Updated app design: ${JSON.stringify(updatedDesign)}`);
 
-    const updatedMobileApp = await this.mobileAppModel.findOne({ repositoryId }).populate('appDesignId').exec();
-    this.logger.debug(`Updated mobile app: ${JSON.stringify(updatedMobileApp)}`);
-
-    return updatedMobileApp;
+    return this.mobileAppModel.findOne({ repositoryId }).populate('appDesignId').exec();
   }
+  
+
+
 }
+

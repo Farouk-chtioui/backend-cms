@@ -51,6 +51,14 @@ export class RepositoriesService {
       .populate('ownerId')
       .exec();
   }
+    async findone(id: string): Promise<Repository> {
+    return this.repositoryModel
+      .findById(id)
+      .populate('mobileAppId')
+      .populate('ownerId')
+      .exec();
+    }
+    
   async findByOwnerId(ownerId: string): Promise<Repository[]> {
     return this.repositoryModel
       .find({ ownerId })
