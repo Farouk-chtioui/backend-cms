@@ -1,4 +1,12 @@
-import { Controller, Post, Body, Get, Param, Put, Logger } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  Get,
+  Param,
+  Put,
+  Logger,
+} from '@nestjs/common';
 import { MobileAppService } from './mobile-app.service';
 import { CreateMobileAppDto } from './dto/create-mobile-app.dto';
 import { AppDesign } from '../appDesign/appDesign.schema';
@@ -14,13 +22,11 @@ export class MobileAppController {
     return this.mobileAppService.create(createMobileAppDto);
   }
 
-  
- 
-@Get(':id')
+  @Get(':id')
   async findOne(@Param('id') id: string) {
     return this.mobileAppService.findOne(id);
   }
-  
+
   @Put(':id/design')
   async updateDesign(
     @Param('id') id: string,
@@ -28,13 +34,25 @@ export class MobileAppController {
   ) {
     return this.mobileAppService.updateDesign(id, designData);
   }
-@Put(':id/repository')
+  @Put(':id/repository')
   async updateDesignByRepositoryId(
     @Param('id') repositoryId: string,
     @Body() designData: Partial<AppDesign>,
   ) {
-    return this.mobileAppService.updateDesignByRepositoryId(repositoryId, designData);
+    return this.mobileAppService.updateDesignByRepositoryId(
+      repositoryId,
+      designData,
+    );
+  }
+
+  @Get(':id/design')
+  async getDesign(@Param('id') id: string) {
+    return this.mobileAppService.getAppDesign(id);
+  }
+
+  @Get(':id/repository')
+  async getByRepositoryId(@Param('id') repositoryId: string) {
+    return this.mobileAppService.findByRepositoryId(repositoryId);
   }
   
- 
 }

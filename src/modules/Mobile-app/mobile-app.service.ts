@@ -15,7 +15,6 @@ export class MobileAppService {
     @InjectModel(AppDesign.name) private appDesignModel: Model<AppDesign>
   ) {}
 
-  // Create a MobileApp and link it to a Repository and AppDesign
   async create(createMobileAppDto: CreateMobileAppDto): Promise<MobileApp> {
     const { appName, appDesignId, repositoryId, version } = createMobileAppDto;
 
@@ -66,7 +65,19 @@ export class MobileAppService {
     return this.mobileAppModel.findOne({ repositoryId }).populate('appDesignId').exec();
   }
   
+  async findByRepositoryId(repositoryId: string): Promise<MobileApp> {
+    return this.mobileAppModel.findOne({ repositoryId }).populate('appDesignId').exec();
+  }
+  
+  async getAppDesign(id: string): Promise<AppDesign> {
+    const mobileApp = await this.mobileAppModel.findById(id).populate('appDesignId').exec();
 
+    if (!mobileApp || !mobileApp.appDesignId) {
+      throw new Error('Mobile app or design not found');
+    }
+
+    return this.appDesignModel.findById(mobileApp.appDesignId).exec();
+  }
 
 }
 
