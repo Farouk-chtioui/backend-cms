@@ -25,7 +25,8 @@ export class AuthService {
   
     return {
       access_token: this.jwtService.sign(payload),
-      userId:user._doc._id,  // Ensure this is returned
+      userId:user._doc._id,
+      username:user._doc.username,
     };
   }
   
