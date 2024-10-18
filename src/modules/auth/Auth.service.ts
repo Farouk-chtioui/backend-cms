@@ -19,7 +19,6 @@ export class AuthService {
   }
 
   async login(user: any) {
-    console.log('User on login:', user);  // Debug the user object
   
     const payload = { username: user.username, sub: user._id };
   
