@@ -11,8 +11,7 @@ import { AppLayoutModule } from './modules/appLayout/appLayout.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    MongooseModule.forRoot(process.env.MONGODB_URI),
-    UsersModule,
+    MongooseModule.forRoot(process.env.MONGODB_URI), 
     AuthModule,
     RepositoriesModule,
     MobileAppModule,

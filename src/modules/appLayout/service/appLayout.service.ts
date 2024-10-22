@@ -1,35 +1,29 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Tab } from '../schema/tab.entity';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
 import { CreateTabDto } from '../dto/createTab.dto';
+import { Tab } from '../interface/tab.interface';
 
 @Injectable()
 export class AppLayoutService {
   constructor(
-    @InjectRepository(Tab)
-    private tabRepository: Repository<Tab>,
+    @InjectModel('Tab') private readonly tabModel: Model<Tab>,  // Inject Mongoose Model
   ) {}
 
-  findAll(): Promise<Tab[]> {
-    return this.tabRepository.find();
+  async findAll(): Promise<Tab[]> {
+    return this.tabModel.find().exec();
   }
 
-  create(createTabDto: CreateTabDto): Promise<Tab> {
-    const tab = this.tabRepository.create(createTabDto);
-    return this.tabRepository.save(tab);
+  async create(createTabDto: CreateTabDto): Promise<Tab> {
+    const createdTab = new this.tabModel(createTabDto);
+    return createdTab.save();
   }
 
-  async update(id: number, updateTabDto: CreateTabDto): Promise<Tab> {
-    const tab = await this.tabRepository.findOne({ where: { id } });
-    if (tab) {
-      Object.assign(tab, updateTabDto);
-      return this.tabRepository.save(tab);
-    }
-    throw new Error('Tab not found');
+  async update(id: string, updateTabDto: CreateTabDto): Promise<Tab> {
+    return this.tabModel.findByIdAndUpdate(id, updateTabDto, { new: true }).exec();
   }
 
-  delete(id: number): Promise<void> {
-    return this.tabRepository.delete(id).then(() => undefined);
+  async delete(id: string): Promise<void> {
+    await this.tabModel.findByIdAndDelete(id).exec();
   }
 }

@@ -1,11 +1,11 @@
 import { Module } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
+import { MongooseModule } from '@nestjs/mongoose';
 import { AppLayoutService } from './service/appLayout.service';
 import { AppLayoutController } from './controller/appLayout.controller';
-import { Tab } from './schema/tab.entity';
+import { TabSchema } from './schema/tab.schema';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Tab])],
+  imports: [MongooseModule.forFeature([{ name: 'Tab', schema: TabSchema }])],
   providers: [AppLayoutService],
   controllers: [AppLayoutController],
 })
