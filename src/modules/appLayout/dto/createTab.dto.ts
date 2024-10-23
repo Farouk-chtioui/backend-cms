@@ -1,8 +1,15 @@
-// src/app-layout/dto/create-tab.dto.ts
+import { IsString, IsBoolean } from 'class-validator';
+
 export class CreateTabDto {
-    readonly name: string;
-    readonly icon: string;
-    readonly visible: boolean;
-    readonly isHome: boolean;
-  }
-  
+  @IsString()
+  readonly name: string;
+
+  @IsString()
+  readonly icon: string;
+
+  @IsBoolean()
+  readonly visible: boolean;
+
+  @IsBoolean()
+  readonly isHome: boolean;
+}

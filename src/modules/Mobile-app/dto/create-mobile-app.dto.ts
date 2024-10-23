@@ -1,5 +1,4 @@
-// create-mobile-app.dto.ts
-import { IsString, IsNotEmpty, IsOptional, IsMongoId } from 'class-validator';
+import { IsString, IsOptional, IsMongoId } from 'class-validator';
 
 export class CreateMobileAppDto {
   @IsString()
@@ -22,3 +21,5 @@ export class CreateMobileAppDto {
   @IsMongoId()
   ownerId?: string;
 }
+
+

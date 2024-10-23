@@ -6,10 +6,14 @@ import {
   Param,
   Put,
   Logger,
+  Delete,
+  HttpException,
+  HttpStatus,
 } from '@nestjs/common';
 import { MobileAppService } from './mobile-app.service';
 import { CreateMobileAppDto } from './dto/create-mobile-app.dto';
 import { AppDesign } from '../appDesign/appDesign.schema';
+import { CreateTabDto } from '../appLayout/dto/createTab.dto';
 
 @Controller('mobile-app')
 export class MobileAppController {
@@ -34,6 +38,7 @@ export class MobileAppController {
   ) {
     return this.mobileAppService.updateDesign(id, designData);
   }
+
   @Put(':id/repository')
   async updateDesignByRepositoryId(
     @Param('id') repositoryId: string,
@@ -52,12 +57,11 @@ export class MobileAppController {
 
   @Get(':id/repository')
   async getByRepositoryId(@Param('id') repositoryId: string) {
-    return this.mobileAppService.findByRepositoryId(repositoryId);
+    return this.mobileAppService.findMobileAppByRepositoryId(repositoryId);
   }
   
   @Post('generate')
   async generateAppWithTheme(@Body() createMobileAppDto: CreateMobileAppDto) {
     return this.mobileAppService.generateAppWithTheme(createMobileAppDto);
   }
-  
 }

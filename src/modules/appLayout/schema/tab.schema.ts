@@ -1,4 +1,11 @@
-import { Schema } from 'mongoose';
+import { Schema, Document, model } from 'mongoose';
+
+export interface Tab extends Document {
+  name: string;
+  icon: string;
+  visible: boolean;
+  isHome: boolean;
+}
 
 export const TabSchema = new Schema({
   name: { type: String, required: true },
@@ -6,3 +13,5 @@ export const TabSchema = new Schema({
   visible: { type: Boolean, default: true },
   isHome: { type: Boolean, default: false },
 });
+
+export const TabModel = model<Tab>('Tab', TabSchema);
