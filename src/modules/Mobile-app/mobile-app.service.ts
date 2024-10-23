@@ -18,7 +18,7 @@ export class MobileAppService {
 
   // Method to create a Mobile App, linking it to a Repository and AppDesign
    async create(createMobileAppDto: CreateMobileAppDto): Promise<MobileApp> {
-    const { appName, appDesignId, repositoryId, version, ownerId } = createMobileAppDto;
+    const { appName, appDesignId, repositoryId, version, ownerId,userEmail } = createMobileAppDto;
 
     let appDesign;
     if (appDesignId) {
@@ -36,6 +36,7 @@ export class MobileAppService {
       repositoryId,
       version,
       ownerId,
+      userEmail,
     });
 
     await newMobileApp.save();
@@ -45,7 +46,7 @@ export class MobileAppService {
 
   // Generate a Mobile App with the provided theme and return download URL
   async generateAppWithTheme(createMobileAppDto: CreateMobileAppDto): Promise<any> {
-    const { appName, appDesignId, repositoryId, ownerId } = createMobileAppDto;
+    const { appName, appDesignId, repositoryId, ownerId, userEmail } = createMobileAppDto;
   
     // Log the received appDesignId to ensure it's being passed correctly
     this.logger.debug(`Received appDesignId: ${appDesignId}`);
@@ -77,7 +78,7 @@ export class MobileAppService {
     }
   
     // Proceed with app generation
-    const downloadUrl = await this.appGenerationService.generateApp(appName, appDesign);
+    const downloadUrl = await this.appGenerationService.generateApp(appName, appDesign, userEmail);
   
     // Save the mobile app with the generated app design
     const newMobileApp = new this.mobileAppModel({
@@ -85,6 +86,8 @@ export class MobileAppService {
       appDesignId: appDesign._id,
       repositoryId,
       ownerId,
+      userEmail,
+      
     });
     await newMobileApp.save();
   

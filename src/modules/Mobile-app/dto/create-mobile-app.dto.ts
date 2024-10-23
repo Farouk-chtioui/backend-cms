@@ -20,6 +20,10 @@ export class CreateMobileAppDto {
   @IsOptional()
   @IsMongoId()
   ownerId?: string;
+
+  @IsOptional()
+  @IsString()
+  userEmail?: string;
 }
 
 
