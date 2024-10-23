@@ -3,27 +3,25 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { User } from './user.schema';
 import * as bcrypt from 'bcrypt';
-import { RepositoriesService } from '../repositories/repositories.service';
+import { RepositoriesService } from '../repositories/repositories.service'; // Import RepositoriesService
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectModel(User.name) private userModel: Model<User>,
-    private repositoriesService: RepositoriesService
+    private repositoriesService: RepositoriesService, // Inject RepositoriesService
   ) {}
 
   // Create a new user and assign a default repository to them
   async create(username: string, password: string): Promise<User> {
     try {
-      // Refined user existence check
+      // Check if the user already exists
       const existingUser = await this.userModel.findOne({ username }).exec();
-      
-      // Handle edge case where the user already exists in the database
       if (existingUser) {
         throw new BadRequestException(`User with username '${username}' already exists`);
       }
 
-      // Hash the password and create a new user
+      // Hash the password and create the new user
       const hashedPassword = await bcrypt.hash(password, 10);
       const newUser = new this.userModel({ username, password: hashedPassword });
       await newUser.save();
@@ -34,14 +32,13 @@ export class UsersService {
         ownerId: newUser._id.toString(),
       });
 
-      // Check if repository ID is valid and cast to ObjectId
+      // Cast repositoryId to ObjectId and store in user's repository list
       const repositoryObjectId = this.ensureObjectId(newRepository._id);
-      newUser.repositoryIds = [repositoryObjectId]; // Ensure ObjectId casting
+      newUser.repositoryIds = [repositoryObjectId];
       await newUser.save();
 
       return newUser;
     } catch (error) {
-      // Improved error handling with detailed message
       throw new BadRequestException('Error creating user: ' + error.message);
     }
   }
@@ -56,12 +53,10 @@ export class UsersService {
   }
 
   async findOne(username: string): Promise<User> {
-    // Find a user by their username
     return this.userModel.findOne({ username }).exec();
   }
 
   async findOneById(userId: string): Promise<User> {
-    // Ensure valid ObjectId before fetching by ID
     const userObjectId = this.ensureObjectId(userId);
     const user = await this.userModel.findById(userObjectId).exec();
     if (!user) {
@@ -71,7 +66,6 @@ export class UsersService {
   }
 
   async findById(id: string): Promise<User> {
-    // Ensure valid ObjectId before fetching by ID
     const userObjectId = this.ensureObjectId(id);
     return this.userModel.findById(userObjectId).exec();
   }
@@ -83,7 +77,6 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
 
-    // Ensure repositoryId is cast as ObjectId
     const repositoryObjectId = this.ensureObjectId(repositoryId);
     user.repositoryIds.push(repositoryObjectId);
     await user.save();

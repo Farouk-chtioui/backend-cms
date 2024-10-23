@@ -55,4 +55,9 @@ export class MobileAppController {
     return this.mobileAppService.findByRepositoryId(repositoryId);
   }
   
+  @Post('generate')
+  async generateAppWithTheme(@Body() createMobileAppDto: CreateMobileAppDto) {
+    return this.mobileAppService.generateAppWithTheme(createMobileAppDto);
+  }
+  
 }

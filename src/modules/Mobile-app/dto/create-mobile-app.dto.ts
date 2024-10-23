@@ -17,4 +17,8 @@ export class CreateMobileAppDto {
   @IsOptional()
   @IsMongoId()
   appDesignId?: string; 
+
+  @IsOptional()
+  @IsMongoId()
+  ownerId?: string;
 }

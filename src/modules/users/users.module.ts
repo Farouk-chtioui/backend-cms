@@ -8,7 +8,8 @@ import { RepositoriesModule } from '../repositories/repositories.module'; // Imp
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
-    RepositoriesModule, // Make sure this is imported here
+    RepositoriesModule,
+     // Make sure this is imported here
   ],
   controllers: [UsersController],
   providers: [UsersService],

@@ -26,10 +26,12 @@ export class RepositoriesService {
 
     const defaultAppDesign = await this.appDesignService.createAppDesign();
 
+    // Create the mobile app associated with the repository
     await this.mobileAppService.create({
       appName: repositoryName,
       appDesignId: defaultAppDesign._id.toString(),
       repositoryId: newRepository._id.toString(),
+      ownerId, // Pass ownerId here
       version: '',
     });
 

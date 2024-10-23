@@ -1,7 +1,7 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
-import { AppDesign } from '../appDesign/appDesign.schema'; // Import AppDesign schema
-import { Repository } from '../repositories/repository.schema'; // Import Repository schema
+import { AppDesign } from '../appDesign/appDesign.schema';
+import { Repository } from '../repositories/repository.schema';
 
 @Schema()
 export class MobileApp extends Document {
@@ -13,7 +13,11 @@ export class MobileApp extends Document {
 
   // Reference to the associated AppDesign using ObjectId
   @Prop({ type: Types.ObjectId, ref: 'AppDesign' })
-  appDesignId: Types.ObjectId; 
+  appDesignId: Types.ObjectId;
+
+  // New ownerId field to track the user who owns the app
+  @Prop({ type: Types.ObjectId, ref: 'User' })
+  ownerId: Types.ObjectId;
 }
 
 export const MobileAppSchema = SchemaFactory.createForClass(MobileApp);
