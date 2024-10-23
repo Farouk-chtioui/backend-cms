@@ -17,36 +17,28 @@ export class MobileAppService {
   ) {}
 
   // Method to create a Mobile App, linking it to a Repository and AppDesign
-  async create(createMobileAppDto: CreateMobileAppDto): Promise<MobileApp> {
+   async create(createMobileAppDto: CreateMobileAppDto): Promise<MobileApp> {
     const { appName, appDesignId, repositoryId, version, ownerId } = createMobileAppDto;
-  
-    // Log appDesignId to check if it's being passed correctly
-    this.logger.debug(`Received appDesignId for new app: ${appDesignId}`);
-  
+
     let appDesign;
     if (appDesignId) {
-      // Ensure we are fetching the correct appDesign by ID
       appDesign = await this.getAppDesign(appDesignId);
       if (!appDesign) {
         throw new Error(`App design with ID ${appDesignId} not found.`);
       }
     } else {
-      // Fallback to default design if no appDesignId is provided
-      this.logger.warn('No appDesignId provided, creating a default app design.');
       appDesign = await this.createDefaultAppDesign();
     }
-  
-    // Create and save the mobile app with the correct appDesignId
+
     const newMobileApp = new this.mobileAppModel({
       appName,
-      appDesignId: appDesign._id,  // Use the correct appDesignId
+      appDesignId: appDesign._id,
       repositoryId,
       version,
       ownerId,
     });
-  
+
     await newMobileApp.save();
-  
     return newMobileApp;
   }
   
@@ -128,12 +120,11 @@ export class MobileAppService {
       topBarIconTextColor: '#FFFFFF',
       statusBarTheme: 'light',
     });
-    await defaultDesign.save(); // Save the default design
+    await defaultDesign.save(); 
     this.logger.debug(`Default app design created: ${defaultDesign._id}`);
-    return defaultDesign; // Return the created default design
+    return defaultDesign; 
   }
 
-  // Method to update app design based on the app ID
   async updateDesign(id: string, designData: Partial<AppDesign>): Promise<MobileApp> {
     this.logger.debug(`Updating design for appId: ${id}`);
     
@@ -145,14 +136,11 @@ export class MobileAppService {
       throw new Error('App design not found for this mobile app');
     }
 
-    // Update the design in the app design collection
     await this.appDesignModel.findByIdAndUpdate(mobileApp.appDesignId, { $set: designData }, { new: true }).exec();
 
-    // Fetch the updated mobile app and return
     return this.mobileAppModel.findById(id).populate('appDesignId').exec();
   }
 
-  // Method to find a mobile app by its ID
   async findOne(id: string): Promise<MobileApp> {
     this.logger.debug(`Fetching mobile app with id: ${id}`);
     const mobileApp = await this.mobileAppModel.findById(id).populate('appDesignId').exec();
@@ -162,7 +150,6 @@ export class MobileAppService {
     return mobileApp;
   }
 
-  // Method to update app design based on the repository ID
   async updateDesignByRepositoryId(repositoryId: string, designData: Partial<AppDesign>): Promise<MobileApp> {
     this.logger.debug(`Updating design for repositoryId: ${repositoryId}`);
   
@@ -178,10 +165,8 @@ export class MobileAppService {
       throw new Error('App design not found for this mobile app');
     }
   
-    // Ensure that the existing appDesignId is being updated
     this.logger.debug(`Current appDesignId for update: ${mobileApp.appDesignId}`);
   
-    // Update the app design in the database
     const updatedDesign = await this.appDesignModel.findByIdAndUpdate(
       mobileApp.appDesignId,
       { $set: designData },
@@ -193,17 +178,14 @@ export class MobileAppService {
       throw new Error('Failed to update app design');
     }
   
-    // Log the updated app design
     this.logger.debug(`Updated App Design: ${JSON.stringify(updatedDesign)}`);
   
-    // Return the updated mobile app with the updated design
     const updatedMobileApp = await this.mobileAppModel.findOne({ repositoryId }).populate('appDesignId').exec();
   
     return updatedMobileApp;
   }
   
 
-  // Method to find a mobile app by repository ID
   async findMobileAppByRepositoryId(repositoryId: string): Promise<MobileApp> {
     const mobileApp = await this.mobileAppModel.findOne({ repositoryId }).populate('appDesignId').exec();
     if (!mobileApp) {
