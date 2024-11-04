@@ -6,20 +6,18 @@ export class UsersController {
   constructor(private usersService: UsersService) {}
 
   @Post('register')
-async register(@Body() body) {
-  const { username, password, email } = body;
-  if (!username || !password || !email) {
-    throw new BadRequestException('Username, password, and email are required');
+  async register(@Body() body) {
+    const { password, email } = body;
+    if (!password || !email) {
+      throw new BadRequestException('Password and email are required');
+    }
+    try {
+      const newUser = await this.usersService.create(email, password);
+      return { message: 'User registered successfully', userId: newUser._id };
+    } catch (error) {
+      throw new BadRequestException(error.message);
+    }
   }
-  try {
-    const newUser = await this.usersService.create(username, password, email);
-    return { message: 'User registered successfully', userId: newUser._id };
-  } catch (error) {
-    throw new BadRequestException(error.message);
-  }
-}
-
-
 
   @Get(':userId')
   async getUserById(@Param('userId') userId: string) {

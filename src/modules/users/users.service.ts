@@ -3,27 +3,27 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { User } from './user.schema';
 import * as bcrypt from 'bcrypt';
-import { RepositoriesService } from '../repositories/repositories.service'; // Import RepositoriesService
+import { RepositoriesService } from '../repositories/repositories.service';
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectModel(User.name) private userModel: Model<User>,
-    private repositoriesService: RepositoriesService, // Inject RepositoriesService
+    private repositoriesService: RepositoriesService,
   ) {}
 
   // Create a new user and assign a default repository to them
-  async create(username: string, password: string, email: string): Promise<User> {
+  async create(email: string, password: string): Promise<User> {
     try {
-      // Check if the user already exists
-      const existingUser = await this.userModel.findOne({ username }).exec();
+      // Check if the user already exists by email
+      const existingUser = await this.userModel.findOne({ email }).exec();
       if (existingUser) {
-        throw new BadRequestException(`User with username '${username}' already exists`);
+        throw new BadRequestException(`User with email '${email}' already exists`);
       }
   
       // Hash the password and create the new user
       const hashedPassword = await bcrypt.hash(password, 10);
-      const newUser = new this.userModel({ username, password: hashedPassword, email });
+      const newUser = new this.userModel({ email, password: hashedPassword });
       await newUser.save();
   
       // Create a default repository for the new user
@@ -43,7 +43,6 @@ export class UsersService {
     }
   }
   
-
   // Utility function to ensure valid ObjectId
   private ensureObjectId(id: any): Types.ObjectId {
     if (Types.ObjectId.isValid(id)) {
@@ -53,8 +52,9 @@ export class UsersService {
     }
   }
 
-  async findOne(username: string): Promise<User> {
-    return this.userModel.findOne({ username }).exec();
+  // Find a user by email
+  async findOne(email: string): Promise<User> {
+    return this.userModel.findOne({ email }).exec();
   }
 
   async findOneById(userId: string): Promise<User> {
