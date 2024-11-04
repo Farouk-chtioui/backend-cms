@@ -156,7 +156,6 @@ export class MobileAppService {
   async updateDesignByRepositoryId(repositoryId: string, designData: Partial<AppDesign>): Promise<MobileApp> {
     this.logger.debug(`Updating design for repositoryId: ${repositoryId}`);
   
-    // Fetch the mobile app with the current appDesignId
     const mobileApp = await this.mobileAppModel.findOne({ repositoryId }).populate('appDesignId').exec();
     if (!mobileApp) {
       this.logger.error(`Mobile app not found for repositoryId: ${repositoryId}`);
@@ -167,8 +166,6 @@ export class MobileAppService {
       this.logger.error(`App design not found for mobile app with repositoryId: ${repositoryId}`);
       throw new Error('App design not found for this mobile app');
     }
-  
-    this.logger.debug(`Current appDesignId for update: ${mobileApp.appDesignId}`);
   
     const updatedDesign = await this.appDesignModel.findByIdAndUpdate(
       mobileApp.appDesignId,
@@ -183,10 +180,9 @@ export class MobileAppService {
   
     this.logger.debug(`Updated App Design: ${JSON.stringify(updatedDesign)}`);
   
-    const updatedMobileApp = await this.mobileAppModel.findOne({ repositoryId }).populate('appDesignId').exec();
-  
-    return updatedMobileApp;
+    return this.mobileAppModel.findOne({ repositoryId }).populate('appDesignId').exec();
   }
+  
   
 
   async findMobileAppByRepositoryId(repositoryId: string): Promise<MobileApp> {
