@@ -8,19 +8,16 @@ export class AppGenerationService {
   private readonly gitRepoUrl = 'https://github.com/Farouk-chtioui/BaseAppTemplate.git'; // The template repo URL
   private readonly outputBasePath = path.resolve(__dirname, '../../../../output/');
 
-  async generateApp(appName: string, appDesign: any, userEmail: string): Promise<void> {
+  async generateApp(appName: string, appDesign: any, _userEmail: string): Promise<void> {
     const outputPath = this.getOutputPath(appName);
 
-    // Step 1: Clone the GitHub repository (template repo)
     await this.cloneGitHubRepo(outputPath);
 
-    // Step 2: Apply the user-specific design to the cloned repo
     this.applyTheme(outputPath, appName, appDesign);
 
-    // Step 3: Simulate local build
+    // testing only locally to be changed later to the real app layout
     this.buildLocally(outputPath);
-
-    // Step 4: Log APK path instead of sending it via email
+    //for now log the path of the generated app
     const apkFilePath = path.join(outputPath, 'app-release.apk');
     fs.writeFileSync(apkFilePath, 'Dummy APK content'); // Simulate APK file creation
     console.log(`APK built successfully! Path: ${apkFilePath}`);
@@ -29,6 +26,23 @@ export class AppGenerationService {
   private getOutputPath(appName: string): string {
     return path.join(this.outputBasePath, appName);
   }
+
+  //add this later in the Generation app 
+  private applyLayout(outputPath: string, appLayout: any): void {
+    const layoutFilePath = path.join(outputPath, 'src', 'layout.ts');
+    let layoutFile = this.readFile(layoutFilePath);
+
+    const layoutMap = {
+        '${tabs}': JSON.stringify(appLayout.tabs),
+        '${layoutType}': appLayout.layoutType,
+    };
+
+    for (const [placeholder, value] of Object.entries(layoutMap)) {
+        layoutFile = layoutFile.replace(new RegExp(placeholder, 'g'), value);
+    }
+
+    this.writeFile(layoutFilePath, layoutFile);
+}
 
   private async cloneGitHubRepo(outputPath: string): Promise<void> {
     this.removeIfExists(outputPath);
