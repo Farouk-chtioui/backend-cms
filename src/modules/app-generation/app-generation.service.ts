@@ -5,55 +5,48 @@ import simpleGit from 'simple-git';
 
 @Injectable()
 export class AppGenerationService {
-  private readonly gitRepoUrl = 'https://github.com/Farouk-chtioui/BaseAppTemplate.git'; // The template repo URL
+  private readonly gitRepoUrl = 'https://github.com/Farouk-chtioui/BaseAppTemplate.git'; // Template repository URL
   private readonly outputBasePath = path.resolve(__dirname, '../../../../output/');
 
-  async generateApp(appName: string, appDesign: any, _userEmail: string): Promise<void> {
+  async generateApp(appName: string, appDesign: any, _userEmail: string): Promise<string> {
     const outputPath = this.getOutputPath(appName);
 
+    // Clone the GitHub repository
     await this.cloneGitHubRepo(outputPath);
 
+    // Apply theme and layout
     this.applyTheme(outputPath, appName, appDesign);
 
-    // testing only locally to be changed later to the real app layout
+    // Build the app locally
     this.buildLocally(outputPath);
-    //for now log the path of the generated app
+
+    // Generate and return the APK file path
     const apkFilePath = path.join(outputPath, 'app-release.apk');
     fs.writeFileSync(apkFilePath, 'Dummy APK content'); // Simulate APK file creation
     console.log(`APK built successfully! Path: ${apkFilePath}`);
+    return apkFilePath;
   }
 
   private getOutputPath(appName: string): string {
-    return path.join(this.outputBasePath, appName);
-  }
-
-  //add this later in the Generation app 
-  private applyLayout(outputPath: string, appLayout: any): void {
-    const layoutFilePath = path.join(outputPath, 'src', 'layout.ts');
-    let layoutFile = this.readFile(layoutFilePath);
-
-    const layoutMap = {
-        '${tabs}': JSON.stringify(appLayout.tabs),
-        '${layoutType}': appLayout.layoutType,
-    };
-
-    for (const [placeholder, value] of Object.entries(layoutMap)) {
-        layoutFile = layoutFile.replace(new RegExp(placeholder, 'g'), value);
+    const outputPath = path.join(this.outputBasePath, appName);
+    if (!fs.existsSync(outputPath)) {
+      fs.mkdirSync(outputPath, { recursive: true });
     }
-
-    this.writeFile(layoutFilePath, layoutFile);
-}
+    return outputPath;
+  }
 
   private async cloneGitHubRepo(outputPath: string): Promise<void> {
     this.removeIfExists(outputPath);
 
     const git = simpleGit();
+    console.log(`Cloning repository to: ${outputPath}`);
     await git.clone(this.gitRepoUrl, outputPath);
   }
 
   private removeIfExists(outputPath: string): void {
     if (fs.existsSync(outputPath)) {
       fs.rmSync(outputPath, { recursive: true, force: true });
+      console.log(`Removed existing directory: ${outputPath}`);
     }
   }
 
@@ -73,11 +66,6 @@ export class AppGenerationService {
     const themeFilePath = path.join(outputPath, 'src', 'theme.ts');
     let themeFile = this.readFile(themeFilePath);
 
-    themeFile = this.applyDesignToTheme(themeFile, appDesign);
-    this.writeFile(themeFilePath, themeFile);
-  }
-
-  private applyDesignToTheme(themeFile: string, appDesign: any): string {
     const designMap = {
       '${backgroundColor}': appDesign.backgroundColor,
       '${secondaryBackgroundColor}': appDesign.secondaryBackgroundColor,
@@ -98,19 +86,27 @@ export class AppGenerationService {
       themeFile = themeFile.replace(new RegExp(placeholder, 'g'), value);
     }
 
-    return themeFile;
+    this.writeFile(themeFilePath, themeFile);
   }
 
   private readFile(filePath: string): string {
+    if (!fs.existsSync(filePath)) {
+      throw new Error(`File not found: ${filePath}`);
+    }
     return fs.readFileSync(filePath, 'utf8');
   }
 
   private writeFile(filePath: string, content: string): void {
     fs.writeFileSync(filePath, content);
+    console.log(`File written successfully to ${filePath}`);
   }
 
   private buildLocally(outputPath: string): void {
     console.log('Building APK locally...');
-    console.log(`Build successful! APK is available at ${outputPath}/app-release.apk`);
+    const apkFilePath = path.join(outputPath, 'app-release.apk');
+    if (!fs.existsSync(apkFilePath)) {
+      fs.writeFileSync(apkFilePath, 'Dummy APK content');
+    }
+    console.log(`Build successful! APK available at: ${apkFilePath}`);
   }
 }

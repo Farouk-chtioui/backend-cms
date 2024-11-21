@@ -48,51 +48,41 @@ export class MobileAppService {
   async generateAppWithTheme(createMobileAppDto: CreateMobileAppDto): Promise<any> {
     const { appName, appDesignId, repositoryId, ownerId, userEmail } = createMobileAppDto;
   
-    // Log the received appDesignId to ensure it's being passed correctly
     this.logger.debug(`Received appDesignId: ${appDesignId}`);
   
     let appDesign;
   
-    // Ensure appDesignId is handled as an ObjectId (if using MongoDB)
     if (appDesignId) {
-      this.logger.debug(`Attempting to fetch app design with id: ${appDesignId}`);
-  
-      try {
-        // Ensure appDesignId is properly cast as an ObjectId if necessary
-        appDesign = await this.appDesignModel.findById(appDesignId).exec();
-  
-        if (!appDesign) {
-          this.logger.warn(`Custom app design with id ${appDesignId} not found. Using default design.`);
-          appDesign = await this.createDefaultAppDesign();  // Fallback to default if the custom design is not found
-        } else {
-          this.logger.debug(`Custom app design found: ${JSON.stringify(appDesign)}`);
-        }
-      } catch (error) {
-        this.logger.error(`Error fetching custom app design: ${error.message}`);
+      this.logger.debug(`Fetching app design with ID: ${appDesignId}`);
+      appDesign = await this.appDesignModel.findById(appDesignId).exec();
+      if (!appDesign) {
+        this.logger.warn(`App design with ID ${appDesignId} not found. Using default design.`);
         appDesign = await this.createDefaultAppDesign();
       }
     } else {
-      // Fallback to default design if no appDesignId is provided
       this.logger.warn('No appDesignId provided. Using default app design.');
       appDesign = await this.createDefaultAppDesign();
     }
   
-    // Proceed with app generation
-    const downloadUrl = await this.appGenerationService.generateApp(appName, appDesign, userEmail);
+    const apkFilePath = await this.appGenerationService.generateApp(appName, appDesign, userEmail);
   
-    // Save the mobile app with the generated app design
+    const downloadUrl = `/output/${appName}/app-release.apk`;
+  
     const newMobileApp = new this.mobileAppModel({
       appName,
       appDesignId: appDesign._id,
       repositoryId,
       ownerId,
       userEmail,
-      
     });
+  
     await newMobileApp.save();
   
-    return { downloadUrl };
+    this.logger.debug(`App generated successfully. Download URL: ${downloadUrl}`);
+  
+    return { success: true, downloadUrl };
   }
+  
   
 
   // Fetch an app design by its ID
