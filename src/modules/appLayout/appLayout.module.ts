@@ -10,5 +10,6 @@ import { AppLayoutService } from './appLayout.service';
   ],
   controllers: [AppLayoutController],
   providers: [AppLayoutService],
+  exports: [AppLayoutService], // Export the service for other modules
 })
 export class AppLayoutModule {}

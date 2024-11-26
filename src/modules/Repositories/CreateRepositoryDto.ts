@@ -1,8 +1,19 @@
-import { IsNotEmpty } from 'class-validator';
+import { IsNotEmpty, IsString, IsOptional } from 'class-validator';
 
 export class CreateRepositoryDto {
-  @IsNotEmpty() // Ensures that repositoryName cannot be empty or null
-  readonly repositoryName: string;
+  @IsString()
+  @IsNotEmpty()
+  repositoryName: string;
 
-  readonly ownerId: string;
+  @IsString()
+  @IsNotEmpty()
+  ownerId: string;
+
+  @IsString()
+  @IsOptional()
+  appDesignId?: string;
+
+  @IsString()
+  @IsOptional()
+  appLayoutId?: string; // Ensure this is marked as required if needed
 }

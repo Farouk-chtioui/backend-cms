@@ -60,18 +60,24 @@ export class MobileAppService {
 
   // Create a default AppLayout if none is provided
   private async createDefaultAppLayout(): Promise<AppLayout> {
-    const defaultLayout = new this.appLayoutModel({
-      layoutType: 'tab',
-      bottomBarTabs: [
-        { name: 'Home', iconName: 'Home', visible: true, isHome: true },
-        { name: 'Settings', iconName: 'Settings', visible: true, isHome: false },
-        { name: 'Cart', iconName: 'ShoppingCart', visible: true, isHome: false },
-        { name: 'Offers', iconName: 'LocalOffer', visible: true, isHome: false },
-        { name: 'Account', iconName: 'AccountCircle', visible: true, isHome: false },
-      ],
-    });
-    return await defaultLayout.save();
+    try {
+      const defaultLayout = new this.appLayoutModel({
+        layoutType: 'tab',
+        bottomBarTabs: [
+          { name: 'Home', iconName: 'Home', visible: true, isHome: true },
+          { name: 'Settings', iconName: 'Settings', visible: true, isHome: false },
+          { name: 'Cart', iconName: 'ShoppingCart', visible: true, isHome: false },
+          { name: 'Offers', iconName: 'LocalOffer', visible: true, isHome: false },
+          { name: 'Account', iconName: 'AccountCircle', visible: true, isHome: false },
+        ],
+      });
+      return await defaultLayout.save();
+    } catch (error) {
+      this.logger.error(`Failed to create default app layout: ${error.message}`);
+      throw new Error('Could not create default app layout');
+    }
   }
+  
   
 
   // Fetch an AppDesign by its ID
@@ -87,25 +93,31 @@ export class MobileAppService {
 
   // Create a default AppDesign if none is provided
   private async createDefaultAppDesign(): Promise<AppDesign> {
-    const defaultDesign = new this.appDesignModel({
-      backgroundColor: '#FFFFFF',
-      secondaryBackgroundColor: '#F0F0F0',
-      mainTextColor: '#000000',
-      titleTextColor: '#000000',
-      importantInformationTextColor: '#FF0000',
-      accentColor: '#00BC7B',
-      secondaryAccentColor: '#B400F6',
-      bottomBarBackgroundColor: '#000000',
-      bottomBarSelectedIconColor: '#FFFFFF',
-      bottomBarUnselectedIconColor: '#AAAAAA',
-      topBarBackgroundColor: '#FF2929',
-      topBarIconTextColor: '#FFFFFF',
-      statusBarTheme: 'light',
-    });
-    await defaultDesign.save();
-    this.logger.debug(`Default app design created: ${defaultDesign._id}`);
-    return defaultDesign;
+    try {
+      const defaultDesign = new this.appDesignModel({
+        backgroundColor: '#FFFFFF',
+        secondaryBackgroundColor: '#F0F0F0',
+        mainTextColor: '#000000',
+        titleTextColor: '#000000',
+        importantInformationTextColor: '#FF0000',
+        accentColor: '#00BC7B',
+        secondaryAccentColor: '#B400F6',
+        bottomBarBackgroundColor: '#000000',
+        bottomBarSelectedIconColor: '#FFFFFF',
+        bottomBarUnselectedIconColor: '#AAAAAA',
+        topBarBackgroundColor: '#FF2929',
+        topBarIconTextColor: '#FFFFFF',
+        statusBarTheme: 'light',
+      });
+      await defaultDesign.save();
+      this.logger.debug(`Default app design created: ${defaultDesign._id}`);
+      return defaultDesign;
+    } catch (error) {
+      this.logger.error(`Failed to create default app design: ${error.message}`);
+      throw new Error('Could not create default app design');
+    }
   }
+  
 
   // Method to update the AppDesign for a MobileApp by ID
   async updateDesign(id: string, designData: Partial<AppDesign>): Promise<MobileApp> {

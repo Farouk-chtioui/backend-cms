@@ -5,6 +5,7 @@ import { Repository } from './repository.schema';
 import { CreateRepositoryDto } from './CreateRepositoryDto';
 import { MobileAppService } from '../mobile-app/mobile-app.service';
 import { AppDesignService } from '../appDesign/appDesign.service';
+import { AppLayoutService } from '../appLayout/appLayout.service';
 
 @Injectable()
 export class RepositoriesService {
@@ -12,31 +13,45 @@ export class RepositoriesService {
     @InjectModel(Repository.name) private repositoryModel: Model<Repository>,
     private readonly mobileAppService: MobileAppService,
     private readonly appDesignService: AppDesignService,
+    private readonly appLayoutService: AppLayoutService, // Inject AppLayoutService
   ) {}
 
   async create(createRepositoryDto: CreateRepositoryDto): Promise<Repository> {
     const { ownerId, repositoryName } = createRepositoryDto;
-
+  
     if (!repositoryName) {
       throw new Error('Repository name cannot be null or empty');
     }
-
+  
+    // Create the repository
     const newRepository = new this.repositoryModel({ repositoryName, ownerId });
     await newRepository.save();
-
-    const defaultAppDesign = await this.appDesignService.createAppDesign();
-
-    // Create the mobile app associated with the repository
-    await this.mobileAppService.create({
-      appName: repositoryName,
-      appDesignId: defaultAppDesign._id.toString(),
-      repositoryId: newRepository._id.toString(),
-      ownerId, // Pass ownerId here
-      version: '',
-    });
-
+  
+    try {
+      // Create a default app design
+      const defaultAppDesign = await this.appDesignService.createAppDesign();
+  
+      // Get or create the default app layout
+      const defaultAppLayout = await this.appLayoutService.getDefaultLayout();
+  
+      // Create the mobile app associated with the repository
+      await this.mobileAppService.create({
+        appName: repositoryName,
+        appDesignId: defaultAppDesign._id.toString(),
+        appLayoutId: defaultAppLayout._id.toString(),
+        repositoryId: newRepository._id.toString(),
+        ownerId,
+        version: '',
+      });
+    } catch (error) {
+      // Rollback repository creation if mobile app creation fails
+      await this.repositoryModel.findByIdAndDelete(newRepository._id);
+      throw new Error(`Failed to create mobile app: ${error.message}`);
+    }
+  
     return newRepository;
   }
+  
 
   async findAll(): Promise<Repository[]> {
     return this.repositoryModel
