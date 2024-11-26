@@ -7,9 +7,10 @@ export class AppLayoutController {
   constructor(private readonly appLayoutService: AppLayoutService) {}
 
   @Get('default')
-  async getDefaultLayout() {
-    return this.appLayoutService.getDefaultLayout();
-  }
+async getDefaultLayout() {
+  return await this.appLayoutService.getDefaultLayout();
+}
+
 
   @Post('create')
   async createLayout(@Body() createAppLayoutDto: CreateAppLayoutDto) {
@@ -27,12 +28,10 @@ async updateLayout(@Body() updateAppLayoutDto: UpdateAppLayoutDto) {
   }
 }
 
-  
-
-
 @Post('reset')
-async resetToDefault() {
+async resetToDefaultLayout() {
   return await this.appLayoutService.resetToDefaultLayout();
 }
+
 
 }

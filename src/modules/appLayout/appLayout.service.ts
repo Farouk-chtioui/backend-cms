@@ -28,15 +28,6 @@ export class AppLayoutService {
     return await newLayout.save();
   }
 
-  // Update existing layout or create a new one
-  async getDefaultLayout(): Promise<AppLayout> {
-    let layout = await this.appLayoutModel.findOne();
-    if (!layout) {
-      layout = await this.resetToDefaultLayout();
-    }
-    return layout;
-  }
-  
   async updateLayout(updateAppLayoutDto: UpdateAppLayoutDto): Promise<AppLayout> {
     const layout = await this.appLayoutModel.findOne();
     if (layout) {
@@ -51,15 +42,37 @@ export class AppLayoutService {
   }
   
   
+  async getDefaultLayout(): Promise<AppLayout> {
+    // Find an existing layout in the database
+    let layout = await this.appLayoutModel.findOne();
+  
+    // If no layout exists, create and return the default layout
+    if (!layout) {
+      layout = await this.resetToDefaultLayout();
+    }
+  
+    return layout;
+  }
   
   async resetToDefaultLayout(): Promise<AppLayout> {
+    // Define the default tabs
     const defaultTabs = this.defaultLayout.bottomBarTabs;
+  
+    // Overwrite the current layout with the default
     const layout = await this.appLayoutModel.findOne();
     if (layout) {
       layout.bottomBarTabs = defaultTabs;
-      return await layout.save();
+      await layout.save();
+      return layout;
     }
-    return await this.createLayout(this.defaultLayout);
+  
+    // Create a new default layout if none exists
+    const newLayout = new this.appLayoutModel({
+      layoutType: 'tab',
+      bottomBarTabs: defaultTabs,
+    });
+    return await newLayout.save();
   }
+  
   
 }
