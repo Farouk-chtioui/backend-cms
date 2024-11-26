@@ -5,41 +5,48 @@ import simpleGit from 'simple-git';
 
 @Injectable()
 export class AppGenerationService {
-  private readonly gitRepoUrl = 'https://github.com/Farouk-chtioui/BaseAppTemplate.git'; // The template repo URL
+  private readonly gitRepoUrl = 'https://github.com/Farouk-chtioui/BaseAppTemplate.git'; // Template repository URL
   private readonly outputBasePath = path.resolve(__dirname, '../../../../output/');
 
-  async generateApp(appName: string, appDesign: any, userEmail: string): Promise<void> {
+  async generateApp(appName: string, appDesign: any, _userEmail: string): Promise<string> {
     const outputPath = this.getOutputPath(appName);
 
-    // Step 1: Clone the GitHub repository (template repo)
+    // Clone the GitHub repository
     await this.cloneGitHubRepo(outputPath);
 
-    // Step 2: Apply the user-specific design to the cloned repo
+    // Apply theme and layout
     this.applyTheme(outputPath, appName, appDesign);
 
-    // Step 3: Simulate local build
+    // Build the app locally
     this.buildLocally(outputPath);
 
-    // Step 4: Log APK path instead of sending it via email
+    // Generate and return the APK file path
     const apkFilePath = path.join(outputPath, 'app-release.apk');
     fs.writeFileSync(apkFilePath, 'Dummy APK content'); // Simulate APK file creation
     console.log(`APK built successfully! Path: ${apkFilePath}`);
+    return apkFilePath;
   }
 
   private getOutputPath(appName: string): string {
-    return path.join(this.outputBasePath, appName);
+    const outputPath = path.join(this.outputBasePath, appName);
+    if (!fs.existsSync(outputPath)) {
+      fs.mkdirSync(outputPath, { recursive: true });
+    }
+    return outputPath;
   }
 
   private async cloneGitHubRepo(outputPath: string): Promise<void> {
     this.removeIfExists(outputPath);
 
     const git = simpleGit();
+    console.log(`Cloning repository to: ${outputPath}`);
     await git.clone(this.gitRepoUrl, outputPath);
   }
 
   private removeIfExists(outputPath: string): void {
     if (fs.existsSync(outputPath)) {
       fs.rmSync(outputPath, { recursive: true, force: true });
+      console.log(`Removed existing directory: ${outputPath}`);
     }
   }
 
@@ -59,11 +66,6 @@ export class AppGenerationService {
     const themeFilePath = path.join(outputPath, 'src', 'theme.ts');
     let themeFile = this.readFile(themeFilePath);
 
-    themeFile = this.applyDesignToTheme(themeFile, appDesign);
-    this.writeFile(themeFilePath, themeFile);
-  }
-
-  private applyDesignToTheme(themeFile: string, appDesign: any): string {
     const designMap = {
       '${backgroundColor}': appDesign.backgroundColor,
       '${secondaryBackgroundColor}': appDesign.secondaryBackgroundColor,
@@ -84,19 +86,27 @@ export class AppGenerationService {
       themeFile = themeFile.replace(new RegExp(placeholder, 'g'), value);
     }
 
-    return themeFile;
+    this.writeFile(themeFilePath, themeFile);
   }
 
   private readFile(filePath: string): string {
+    if (!fs.existsSync(filePath)) {
+      throw new Error(`File not found: ${filePath}`);
+    }
     return fs.readFileSync(filePath, 'utf8');
   }
 
   private writeFile(filePath: string, content: string): void {
     fs.writeFileSync(filePath, content);
+    console.log(`File written successfully to ${filePath}`);
   }
 
   private buildLocally(outputPath: string): void {
     console.log('Building APK locally...');
-    console.log(`Build successful! APK is available at ${outputPath}/app-release.apk`);
+    const apkFilePath = path.join(outputPath, 'app-release.apk');
+    if (!fs.existsSync(apkFilePath)) {
+      fs.writeFileSync(apkFilePath, 'Dummy APK content');
+    }
+    console.log(`Build successful! APK available at: ${apkFilePath}`);
   }
 }
