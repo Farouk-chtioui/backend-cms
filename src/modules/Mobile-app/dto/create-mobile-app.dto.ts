@@ -11,19 +11,21 @@ export class CreateMobileAppDto {
 
   @IsOptional()
   @IsMongoId()
-  repositoryId?: string; 
+  repositoryId?: string;  
 
   @IsOptional()
   @IsMongoId()
-  appDesignId?: string; 
+  appDesignId?: string;  
 
   @IsOptional()
   @IsMongoId()
-  ownerId?: string;
+  ownerId?: string;  
 
   @IsOptional()
   @IsString()
-  userEmail?: string;
+  userEmail?: string; 
+
+  @IsOptional()
+  @IsMongoId()
+  appLayoutId?: string;  
 }
-
-

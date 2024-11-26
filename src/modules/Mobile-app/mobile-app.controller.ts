@@ -6,14 +6,13 @@ import {
   Param,
   Put,
   Logger,
-  Delete,
   HttpException,
   HttpStatus,
 } from '@nestjs/common';
 import { MobileAppService } from './mobile-app.service';
 import { CreateMobileAppDto } from './dto/create-mobile-app.dto';
 import { AppDesign } from '../appDesign/appDesign.schema';
-import { CreateTabDto } from '../appLayout/dto/createTab.dto';
+import { AppLayout } from '../appLayout/appLayout.schema';  // Import AppLayout schema
 
 @Controller('mobile-app')
 export class MobileAppController {
@@ -44,10 +43,7 @@ export class MobileAppController {
     @Param('id') repositoryId: string,
     @Body() designData: Partial<AppDesign>,
   ) {
-    return this.mobileAppService.updateDesignByRepositoryId(
-      repositoryId,
-      designData,
-    );
+    return this.mobileAppService.updateDesignByRepositoryId(repositoryId, designData);
   }
 
   @Get(':id/design')
@@ -63,5 +59,19 @@ export class MobileAppController {
   @Post('generate')
   async generateAppWithTheme(@Body() createMobileAppDto: CreateMobileAppDto) {
     return this.mobileAppService.generateAppWithTheme(createMobileAppDto);
+  }
+
+  // Update the AppLayout for a MobileApp
+  @Put(':id/layout')
+  async updateAppLayout(
+    @Param('id') id: string,
+    @Body() layoutData: Partial<AppLayout>,
+  ) {
+    return this.mobileAppService.updateAppLayout(id, layoutData);
+  }
+
+  @Get(':id/layout')
+  async getAppLayout(@Param('id') id: string) {
+    return this.mobileAppService.getAppLayout(id);
   }
 }

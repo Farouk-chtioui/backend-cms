@@ -1,12 +1,14 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-import { AppLayoutService } from './service/appLayout.service';
-import { AppLayoutController } from './controller/appLayout.controller';
-import { TabSchema } from './schema/tab.schema';
+import { AppLayout, AppLayoutSchema } from './appLayout.schema';
+import { AppLayoutController } from './appLayout.controller';
+import { AppLayoutService } from './appLayout.service';
 
 @Module({
-  imports: [MongooseModule.forFeature([{ name: 'Tab', schema: TabSchema }])],
-  providers: [AppLayoutService],
+  imports: [
+    MongooseModule.forFeature([{ name: AppLayout.name, schema: AppLayoutSchema }]),
+  ],
   controllers: [AppLayoutController],
+  providers: [AppLayoutService],
 })
 export class AppLayoutModule {}
