@@ -15,7 +15,7 @@ export class AppLayoutService {
     let defaultLayout = await this.appLayoutModel.findOne({ layoutType: 'default' });
     if (!defaultLayout) {
       defaultLayout = new this.appLayoutModel({
-        layoutType: 'default',
+        layoutType: 'tabs',
         bottomBarTabs: [
           { name: 'Home', iconName: 'Home', visible: true, isHome: true },
           { name: 'Settings', iconName: 'Settings', visible: true, isHome: false },

@@ -20,29 +20,29 @@ export class UsersService {
       if (existingUser) {
         throw new BadRequestException(`User with email '${email}' already exists`);
       }
-  
+
       // Hash the password and create the new user
       const hashedPassword = await bcrypt.hash(password, 10);
       const newUser = new this.userModel({ email, password: hashedPassword });
       await newUser.save();
-  
+
       // Create a default repository for the new user
       const newRepository = await this.repositoriesService.create({
         repositoryName: 'my_project',
         ownerId: newUser._id.toString(),
       });
-  
+
       // Cast repositoryId to ObjectId and store in user's repository list
       const repositoryObjectId = this.ensureObjectId(newRepository._id);
       newUser.repositoryIds = [repositoryObjectId];
       await newUser.save();
-  
+
       return newUser;
     } catch (error) {
       throw new BadRequestException('Error creating user: ' + error.message);
     }
   }
-  
+
   // Utility function to ensure valid ObjectId
   private ensureObjectId(id: any): Types.ObjectId {
     if (Types.ObjectId.isValid(id)) {
@@ -53,10 +53,11 @@ export class UsersService {
   }
 
   // Find a user by email
-  async findOne(email: string): Promise<User> {
+  async findOneByEmail(email: string): Promise<User> {
     return this.userModel.findOne({ email }).exec();
   }
 
+  // Find a user by ID
   async findOneById(userId: string): Promise<User> {
     const userObjectId = this.ensureObjectId(userId);
     const user = await this.userModel.findById(userObjectId).exec();
