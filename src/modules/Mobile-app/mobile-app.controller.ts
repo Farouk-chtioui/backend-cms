@@ -63,15 +63,20 @@ export class MobileAppController {
 
   // Update the AppLayout for a MobileApp
   @Put(':id/layout')
-  async updateAppLayout(
-    @Param('id') id: string,
-    @Body() layoutData: Partial<AppLayout>,
-  ) {
-    return this.mobileAppService.updateAppLayout(id, layoutData);
-  }
+async updateAppLayout(@Param('id') id: string, @Body() layoutData: Partial<AppLayout>) {
+  return await this.mobileAppService.updateAppLayout(id, layoutData);
+}
+
 
   @Get(':id/layout')
   async getAppLayout(@Param('id') id: string) {
-    return this.mobileAppService.getAppLayout(id);
+    return await this.mobileAppService.getAppLayout(id);
   }
+  
+  @Post(':id/layout/reset')
+async resetAppLayout(@Param('id') appId: string) {
+  return await this.mobileAppService.resetAppLayout(appId);
+}
+
+
 }

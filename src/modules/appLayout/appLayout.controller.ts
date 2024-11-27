@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Body } from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, Param } from '@nestjs/common';
 import { AppLayoutService } from './appLayout.service';
 import { CreateAppLayoutDto, UpdateAppLayoutDto } from './dtos/appLayout.dto';
 
@@ -28,10 +28,11 @@ async updateLayout(@Body() updateAppLayoutDto: UpdateAppLayoutDto) {
   }
 }
 
-@Post('reset')
-async resetToDefaultLayout() {
-  return await this.appLayoutService.resetToDefaultLayout();
+@Post('reset/:layoutId')
+async resetLayoutToDefault(@Param('layoutId') layoutId: string) {
+  return await this.appLayoutService.resetLayoutToDefault(layoutId);
 }
+
 
 
 }

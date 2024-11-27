@@ -10,17 +10,47 @@ export class AppLayoutService {
     @InjectModel(AppLayout.name) private appLayoutModel: Model<AppLayout>,
   ) {}
 
-  private defaultLayout = {
-    layoutType: 'tab',
-    bottomBarTabs: [
-      { name: 'Home', visible: true, isHome: true, iconName: 'Home' },
-      { name: 'Settings', visible: true, isHome: false, iconName: 'Settings' },
-      { name: 'Cart', visible: true, isHome: false, iconName: 'ShoppingCart' },
-      { name: 'Offers', visible: true, isHome: false, iconName: 'LocalOffer' },
-      { name: 'Account', visible: true, isHome: false, iconName: 'AccountCircle' },
-    ],
-  };
+  // Retrieve or create the default layout
+  async getDefaultLayout(): Promise<AppLayout> {
+    let defaultLayout = await this.appLayoutModel.findOne({ layoutType: 'default' });
+    if (!defaultLayout) {
+      defaultLayout = new this.appLayoutModel({
+        layoutType: 'default',
+        bottomBarTabs: [
+          { name: 'Home', iconName: 'Home', visible: true, isHome: true },
+          { name: 'Settings', iconName: 'Settings', visible: true, isHome: false },
+          { name: 'Cart', iconName: 'ShoppingCart', visible: true, isHome: false },
+          { name: 'Offers', iconName: 'LocalOffer', visible: true, isHome: false },
+          { name: 'Account', iconName: 'AccountCircle', visible: true, isHome: false },
+        ],
+      });
+      await defaultLayout.save();
+    }
+    return defaultLayout;
+  }
 
+  // Clone an existing layout for a new app
+  async cloneLayout(templateLayoutId: string): Promise<AppLayout> {
+    const templateLayout = await this.appLayoutModel.findById(templateLayoutId).exec();
+    if (!templateLayout) throw new Error('Template layout not found');
+
+    const clonedLayout = new this.appLayoutModel({
+      layoutType: templateLayout.layoutType,
+      bottomBarTabs: templateLayout.bottomBarTabs,
+    });
+
+    return await clonedLayout.save();
+  }
+
+  // Reset layout to default by replacing with a fresh copy of the default template
+  async resetLayoutToDefault(layoutId: string): Promise<AppLayout> {
+    const layout = await this.appLayoutModel.findById(layoutId).exec();
+    if (!layout) throw new Error(`Layout with ID ${layoutId} not found`);
+
+    const defaultLayout = await this.getDefaultLayout();
+    layout.bottomBarTabs = defaultLayout.bottomBarTabs;
+    return await layout.save();
+  }
 
   // Create a new layout
   async createLayout(createAppLayoutDto: CreateAppLayoutDto): Promise<AppLayout> {
@@ -28,6 +58,7 @@ export class AppLayoutService {
     return await newLayout.save();
   }
 
+  // Update an existing layout
   async updateLayout(updateAppLayoutDto: UpdateAppLayoutDto): Promise<AppLayout> {
     const layout = await this.appLayoutModel.findOne();
     if (layout) {
@@ -40,39 +71,4 @@ export class AppLayoutService {
     });
     return await newLayout.save();
   }
-  
-  
-  async getDefaultLayout(): Promise<AppLayout> {
-    // Find an existing layout in the database
-    let layout = await this.appLayoutModel.findOne();
-  
-    // If no layout exists, create and return the default layout
-    if (!layout) {
-      layout = await this.resetToDefaultLayout();
-    }
-  
-    return layout;
-  }
-  
-  async resetToDefaultLayout(): Promise<AppLayout> {
-    // Define the default tabs
-    const defaultTabs = this.defaultLayout.bottomBarTabs;
-  
-    // Overwrite the current layout with the default
-    const layout = await this.appLayoutModel.findOne();
-    if (layout) {
-      layout.bottomBarTabs = defaultTabs;
-      await layout.save();
-      return layout;
-    }
-  
-    // Create a new default layout if none exists
-    const newLayout = new this.appLayoutModel({
-      layoutType: 'tab',
-      bottomBarTabs: defaultTabs,
-    });
-    return await newLayout.save();
-  }
-  
-  
 }
