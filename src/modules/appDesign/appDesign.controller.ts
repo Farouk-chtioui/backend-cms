@@ -1,4 +1,3 @@
-// src/app-design/app-design.controller.ts
 import { Controller, Post, Get, Put, Param, Body } from '@nestjs/common';
 import { AppDesignService } from './appDesign.service';
 import { AppDesign } from './appDesign.schema';
@@ -7,19 +6,27 @@ import { AppDesign } from './appDesign.schema';
 export class AppDesignController {
   constructor(private readonly appDesignService: AppDesignService) {}
 
-  // Create AppDesign
-  @Post()
-    async createAppDesign(): Promise<AppDesign> {
-        return this.appDesignService.createAppDesign();
-    }
+  /**
+   * Get or create default design.
+   */
+  @Get(':id')
+  async getOrCreateDesign(@Param('id') designId?: string): Promise<AppDesign> {
+    return this.appDesignService.getOrCreateDesign(designId);
+  }
 
- 
+  /**
+   * Create a default design.
+   */
+  @Post('default')
+  async createDefaultDesign(): Promise<AppDesign> {
+    return this.appDesignService.createDefaultDesign();
+  }
 
+  /**
+   * Update an existing design.
+   */
   @Put(':id')
-  async updateAppDesign(
-    @Param('id') designId: string,
-    @Body() designData: Partial<AppDesign>
-  ): Promise<AppDesign> {
+  async updateAppDesign(@Param('id') designId: string, @Body() designData: Partial<AppDesign>): Promise<AppDesign> {
     return this.appDesignService.updateAppDesign(designId, designData);
   }
 }

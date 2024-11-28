@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { AppLayout } from './appLayout.schema';
@@ -6,69 +6,58 @@ import { CreateAppLayoutDto, UpdateAppLayoutDto } from './dtos/appLayout.dto';
 
 @Injectable()
 export class AppLayoutService {
-  constructor(
-    @InjectModel(AppLayout.name) private appLayoutModel: Model<AppLayout>,
-  ) {}
+  constructor(@InjectModel(AppLayout.name) private appLayoutModel: Model<AppLayout>) {}
 
-  // Retrieve or create the default layout
-  async getDefaultLayout(): Promise<AppLayout> {
+  /**
+   * Fetch or create a default layout.
+   */
+  async getOrCreateDefaultLayout(): Promise<AppLayout> {
     let defaultLayout = await this.appLayoutModel.findOne({ layoutType: 'default' });
     if (!defaultLayout) {
-      defaultLayout = new this.appLayoutModel({
-        layoutType: 'tabs',
-        bottomBarTabs: [
-          { name: 'Home', iconName: 'Home', visible: true, isHome: true },
-          { name: 'Settings', iconName: 'Settings', visible: true, isHome: false },
-          { name: 'Cart', iconName: 'ShoppingCart', visible: true, isHome: false },
-          { name: 'Offers', iconName: 'LocalOffer', visible: true, isHome: false },
-          { name: 'Account', iconName: 'AccountCircle', visible: true, isHome: false },
-        ],
-      });
-      await defaultLayout.save();
+      defaultLayout = await this.createDefaultLayout();
     }
     return defaultLayout;
   }
 
-  // Clone an existing layout for a new app
-  async cloneLayout(templateLayoutId: string): Promise<AppLayout> {
-    const templateLayout = await this.appLayoutModel.findById(templateLayoutId).exec();
-    if (!templateLayout) throw new Error('Template layout not found');
-
-    const clonedLayout = new this.appLayoutModel({
-      layoutType: templateLayout.layoutType,
-      bottomBarTabs: templateLayout.bottomBarTabs,
+  /**
+   * Create a default layout.
+   */
+  async createDefaultLayout(): Promise<AppLayout> {
+    const defaultLayout = new this.appLayoutModel({
+      layoutType: 'tabs',
+      bottomBarTabs: [
+        { name: 'Home', iconName: 'Home', visible: true, isHome: true },
+        { name: 'Settings', iconName: 'Settings', visible: true, isHome: false },
+        { name: 'Cart', iconName: 'ShoppingCart', visible: true, isHome: false },
+        { name: 'Offers', iconName: 'LocalOffer', visible: true, isHome: false },
+        { name: 'Account', iconName: 'AccountCircle', visible: true, isHome: false },
+      ],
     });
-
-    return await clonedLayout.save();
+    return defaultLayout.save();
   }
 
-  // Reset layout to default by replacing with a fresh copy of the default template
+  /**
+   * Update an existing layout.
+   */
+  async updateLayout(layoutId: string, layoutData: UpdateAppLayoutDto): Promise<AppLayout> {
+    const updatedLayout = await this.appLayoutModel.findByIdAndUpdate(layoutId, layoutData, { new: true }).exec();
+    if (!updatedLayout) throw new NotFoundException('Layout not found');
+    return updatedLayout;
+  }
+
+  /**
+   * Reset layout to default.
+   */
   async resetLayoutToDefault(layoutId: string): Promise<AppLayout> {
     const layout = await this.appLayoutModel.findById(layoutId).exec();
-    if (!layout) throw new Error(`Layout with ID ${layoutId} not found`);
+    if (!layout) throw new NotFoundException(`Layout with ID ${layoutId} not found`);
 
-    const defaultLayout = await this.getDefaultLayout();
+    const defaultLayout = await this.getOrCreateDefaultLayout();
     layout.bottomBarTabs = defaultLayout.bottomBarTabs;
-    return await layout.save();
+    return layout.save();
   }
-
-  // Create a new layout
-  async createLayout(createAppLayoutDto: CreateAppLayoutDto): Promise<AppLayout> {
-    const newLayout = new this.appLayoutModel(createAppLayoutDto);
-    return await newLayout.save();
+  async getLayoutById(layoutId: string): Promise<AppLayout> {
+    return this.appLayoutModel.findById(layoutId).exec();
   }
-
-  // Update an existing layout
-  async updateLayout(updateAppLayoutDto: UpdateAppLayoutDto): Promise<AppLayout> {
-    const layout = await this.appLayoutModel.findOne();
-    if (layout) {
-      layout.bottomBarTabs = updateAppLayoutDto.bottomBarTabs;
-      return await layout.save();
-    }
-    const newLayout = new this.appLayoutModel({
-      layoutType: 'tab',
-      bottomBarTabs: updateAppLayoutDto.bottomBarTabs,
-    });
-    return await newLayout.save();
-  }
+  
 }
