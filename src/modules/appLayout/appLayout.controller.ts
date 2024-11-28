@@ -6,35 +6,33 @@ import { CreateAppLayoutDto, UpdateAppLayoutDto } from './dtos/appLayout.dto';
 export class AppLayoutController {
   constructor(private readonly appLayoutService: AppLayoutService) {}
 
-  /**
-   * Get or create default layout.
-   */
   @Get('default')
-  async getOrCreateDefaultLayout() {
-    return this.appLayoutService.getOrCreateDefaultLayout();
+async getDefaultLayout() {
+  return await this.appLayoutService.getDefaultLayout();
+}
+
+
+  @Post('create')
+  async createLayout(@Body() createAppLayoutDto: CreateAppLayoutDto) {
+    return this.appLayoutService.createLayout(createAppLayoutDto);
   }
 
-  /**
-   * Create a default layout.
-   */
-  @Post('default')
-  async createDefaultLayout() {
-    return this.appLayoutService.createDefaultLayout();
+  @Put('update')
+async updateLayout(@Body() updateAppLayoutDto: UpdateAppLayoutDto) {
+  try {
+    console.log('Received payload:', updateAppLayoutDto);
+    return await this.appLayoutService.updateLayout(updateAppLayoutDto);
+  } catch (error) {
+    console.error('Validation or processing error:', error.message);
+    throw error;
   }
+}
 
-  /**
-   * Update an existing layout.
-   */
-  @Put(':id')
-  async updateLayout(@Param('id') layoutId: string, @Body() layoutData: UpdateAppLayoutDto) {
-    return this.appLayoutService.updateLayout(layoutId, layoutData);
-  }
+@Post('reset/:layoutId')
+async resetLayoutToDefault(@Param('layoutId') layoutId: string) {
+  return await this.appLayoutService.resetLayoutToDefault(layoutId);
+}
 
-  /**
-   * Reset layout to default.
-   */
-  @Post('reset/:id')
-  async resetLayoutToDefault(@Param('id') layoutId: string) {
-    return this.appLayoutService.resetLayoutToDefault(layoutId);
-  }
+
+
 }

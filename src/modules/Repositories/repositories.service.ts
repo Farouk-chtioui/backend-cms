@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Repository } from './repository.schema';
@@ -16,27 +16,31 @@ export class RepositoriesService {
     private readonly appLayoutService: AppLayoutService, // Inject AppLayoutService
   ) {}
 
-  /**
-   * Create a new repository and associated mobile app.
-   */
   async create(createRepositoryDto: CreateRepositoryDto): Promise<Repository> {
     const { ownerId, repositoryName } = createRepositoryDto;
   
     if (!repositoryName) {
-      throw new BadRequestException('Repository name cannot be null or empty');
+      throw new Error('Repository name cannot be null or empty');
     }
   
-    // Create a new repository
+    // Create the repository
     const newRepository = new this.repositoryModel({ repositoryName, ownerId });
     await newRepository.save();
   
     try {
-      // Create a mobile app associated with the repository
+      // Create a default app design
+      const defaultAppDesign = await this.appDesignService.createAppDesign();
+  
+      // Get or create the default app layout
+      const defaultAppLayout = await this.appLayoutService.getDefaultLayout();
+  
+      // Create the mobile app associated with the repository
       await this.mobileAppService.create({
         appName: repositoryName,
+        appDesignId: defaultAppDesign._id.toString(),
+        appLayoutId: defaultAppLayout._id.toString(),
         repositoryId: newRepository._id.toString(),
         ownerId,
-        userEmail: '', // Ensure userEmail is passed if required
         version: '',
       });
     } catch (error) {
@@ -48,9 +52,7 @@ export class RepositoriesService {
     return newRepository;
   }
   
-  /**
-   * Fetch all repositories.
-   */
+
   async findAll(): Promise<Repository[]> {
     return this.repositoryModel
       .find()
@@ -59,48 +61,26 @@ export class RepositoriesService {
       .exec();
   }
 
-  /**
-   * Fetch a repository by ID.
-   */
   async findById(id: string): Promise<Repository> {
-    const repository = await this.repositoryModel
+    return this.repositoryModel
       .findById(id)
       .populate('mobileAppId')
       .populate('ownerId')
       .exec();
-
-    if (!repository) {
-      throw new NotFoundException(`Repository with ID ${id} not found`);
-    }
-
-    return repository;
   }
-
-  /**
-   * Fetch a repository by owner ID.
-   */
+    async findone(id: string): Promise<Repository> {
+    return this.repositoryModel
+      .findById(id)
+      .populate('mobileAppId')
+      .populate('ownerId')
+      .exec();
+    }
+    
   async findByOwnerId(ownerId: string): Promise<Repository[]> {
     return this.repositoryModel
       .find({ ownerId })
       .populate('mobileAppId')
       .populate('ownerId')
       .exec();
-  }
-
-  /**
-   * Helper to fetch a single repository.
-   */
-  async findOne(id: string): Promise<Repository> {
-    const repository = await this.repositoryModel
-      .findById(id)
-      .populate('mobileAppId')
-      .populate('ownerId')
-      .exec();
-
-    if (!repository) {
-      throw new NotFoundException(`Repository with ID ${id} not found`);
-    }
-
-    return repository;
   }
 }

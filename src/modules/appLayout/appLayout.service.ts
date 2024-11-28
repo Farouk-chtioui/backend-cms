@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { AppLayout } from './appLayout.schema';
@@ -6,58 +6,69 @@ import { CreateAppLayoutDto, UpdateAppLayoutDto } from './dtos/appLayout.dto';
 
 @Injectable()
 export class AppLayoutService {
-  constructor(@InjectModel(AppLayout.name) private appLayoutModel: Model<AppLayout>) {}
+  constructor(
+    @InjectModel(AppLayout.name) private appLayoutModel: Model<AppLayout>,
+  ) {}
 
-  /**
-   * Fetch or create a default layout.
-   */
-  async getOrCreateDefaultLayout(): Promise<AppLayout> {
+  // Retrieve or create the default layout
+  async getDefaultLayout(): Promise<AppLayout> {
     let defaultLayout = await this.appLayoutModel.findOne({ layoutType: 'default' });
     if (!defaultLayout) {
-      defaultLayout = await this.createDefaultLayout();
+      defaultLayout = new this.appLayoutModel({
+        layoutType: 'tabs',
+        bottomBarTabs: [
+          { name: 'Home', iconName: 'Home', visible: true, isHome: true },
+          { name: 'Settings', iconName: 'Settings', visible: true, isHome: false },
+          { name: 'Cart', iconName: 'ShoppingCart', visible: true, isHome: false },
+          { name: 'Offers', iconName: 'LocalOffer', visible: true, isHome: false },
+          { name: 'Account', iconName: 'AccountCircle', visible: true, isHome: false },
+        ],
+      });
+      await defaultLayout.save();
     }
     return defaultLayout;
   }
 
-  /**
-   * Create a default layout.
-   */
-  async createDefaultLayout(): Promise<AppLayout> {
-    const defaultLayout = new this.appLayoutModel({
-      layoutType: 'tabs',
-      bottomBarTabs: [
-        { name: 'Home', iconName: 'Home', visible: true, isHome: true },
-        { name: 'Settings', iconName: 'Settings', visible: true, isHome: false },
-        { name: 'Cart', iconName: 'ShoppingCart', visible: true, isHome: false },
-        { name: 'Offers', iconName: 'LocalOffer', visible: true, isHome: false },
-        { name: 'Account', iconName: 'AccountCircle', visible: true, isHome: false },
-      ],
+  // Clone an existing layout for a new app
+  async cloneLayout(templateLayoutId: string): Promise<AppLayout> {
+    const templateLayout = await this.appLayoutModel.findById(templateLayoutId).exec();
+    if (!templateLayout) throw new Error('Template layout not found');
+
+    const clonedLayout = new this.appLayoutModel({
+      layoutType: templateLayout.layoutType,
+      bottomBarTabs: templateLayout.bottomBarTabs,
     });
-    return defaultLayout.save();
+
+    return await clonedLayout.save();
   }
 
-  /**
-   * Update an existing layout.
-   */
-  async updateLayout(layoutId: string, layoutData: UpdateAppLayoutDto): Promise<AppLayout> {
-    const updatedLayout = await this.appLayoutModel.findByIdAndUpdate(layoutId, layoutData, { new: true }).exec();
-    if (!updatedLayout) throw new NotFoundException('Layout not found');
-    return updatedLayout;
-  }
-
-  /**
-   * Reset layout to default.
-   */
+  // Reset layout to default by replacing with a fresh copy of the default template
   async resetLayoutToDefault(layoutId: string): Promise<AppLayout> {
     const layout = await this.appLayoutModel.findById(layoutId).exec();
-    if (!layout) throw new NotFoundException(`Layout with ID ${layoutId} not found`);
+    if (!layout) throw new Error(`Layout with ID ${layoutId} not found`);
 
-    const defaultLayout = await this.getOrCreateDefaultLayout();
+    const defaultLayout = await this.getDefaultLayout();
     layout.bottomBarTabs = defaultLayout.bottomBarTabs;
-    return layout.save();
+    return await layout.save();
   }
-  async getLayoutById(layoutId: string): Promise<AppLayout> {
-    return this.appLayoutModel.findById(layoutId).exec();
+
+  // Create a new layout
+  async createLayout(createAppLayoutDto: CreateAppLayoutDto): Promise<AppLayout> {
+    const newLayout = new this.appLayoutModel(createAppLayoutDto);
+    return await newLayout.save();
   }
-  
+
+  // Update an existing layout
+  async updateLayout(updateAppLayoutDto: UpdateAppLayoutDto): Promise<AppLayout> {
+    const layout = await this.appLayoutModel.findOne();
+    if (layout) {
+      layout.bottomBarTabs = updateAppLayoutDto.bottomBarTabs;
+      return await layout.save();
+    }
+    const newLayout = new this.appLayoutModel({
+      layoutType: 'tab',
+      bottomBarTabs: updateAppLayoutDto.bottomBarTabs,
+    });
+    return await newLayout.save();
+  }
 }

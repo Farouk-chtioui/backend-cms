@@ -1,8 +1,18 @@
-import { Controller, Post, Get, Put, Body, Param, Logger } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  Get,
+  Param,
+  Put,
+  Logger,
+  HttpException,
+  HttpStatus,
+} from '@nestjs/common';
 import { MobileAppService } from './mobile-app.service';
 import { CreateMobileAppDto } from './dto/create-mobile-app.dto';
 import { AppDesign } from '../appDesign/appDesign.schema';
-import { AppLayout } from '../appLayout/appLayout.schema';
+import { AppLayout } from '../appLayout/appLayout.schema';  // Import AppLayout schema
 
 @Controller('mobile-app')
 export class MobileAppController {
@@ -10,51 +20,63 @@ export class MobileAppController {
 
   constructor(private readonly mobileAppService: MobileAppService) {}
 
-  /**
-   * Create a new Mobile App.
-   */
   @Post()
   async create(@Body() createMobileAppDto: CreateMobileAppDto) {
     return this.mobileAppService.create(createMobileAppDto);
   }
 
-  /**
-   * Fetch the configuration of a Mobile App.
-   */
-  @Get(':id/config')
-  async getAppConfiguration(@Param('id') appId: string) {
-    return this.mobileAppService.getAppConfiguration(appId);
+  @Get(':id')
+  async findOne(@Param('id') id: string) {
+    return this.mobileAppService.findOne(id);
   }
 
-  /**
-   * Reset the layout of a Mobile App.
-   */
-  @Post(':id/layout/reset')
-  async resetAppLayout(@Param('id') appId: string) {
-    return this.mobileAppService.resetAppLayout(appId);
-  }
-
-  /**
-   * Update the layout of a Mobile App.
-   */
-  @Put(':id/layout')
-  async updateAppLayout(@Param('id') appId: string, @Body() layoutData: Partial<AppLayout>) {
-    return this.mobileAppService.updateAppLayout(appId, layoutData);
-  }
-
-  /**
-   * Update the design of a Mobile App.
-   */
   @Put(':id/design')
-  async updateAppDesign(@Param('id') appId: string, @Body() designData: Partial<AppDesign>) {
-    return this.mobileAppService.updateAppDesign(appId, designData);
+  async updateDesign(
+    @Param('id') id: string,
+    @Body() designData: Partial<AppDesign>,
+  ) {
+    return this.mobileAppService.updateDesign(id, designData);
   }
 
-  /**
-   * Generate a Mobile App with theme and design.
-   */
-  @Post('generate')
+  @Put(':id/repository')
+  async updateDesignByRepositoryId(
+    @Param('id') repositoryId: string,
+    @Body() designData: Partial<AppDesign>,
+  ) {
+    return this.mobileAppService.updateDesignByRepositoryId(repositoryId, designData);
+  }
+
+  @Get(':id/design')
+  async getDesign(@Param('id') id: string) {
+    return this.mobileAppService.getAppDesign(id);
+  }
+
+  @Get(':id/repository')
+  async getByRepositoryId(@Param('id') repositoryId: string) {
+    return this.mobileAppService.findMobileAppByRepositoryId(repositoryId);
+  }
+  
+  @Post('generate') 
   async generateAppWithTheme(@Body() createMobileAppDto: CreateMobileAppDto) {
     return this.mobileAppService.generateAppWithTheme(createMobileAppDto);
   }
+
+  // Update the AppLayout for a MobileApp
+  @Put(':id/layout')
+async updateAppLayout(@Param('id') id: string, @Body() layoutData: Partial<AppLayout>) {
+  return await this.mobileAppService.updateAppLayout(id, layoutData);
+}
+
+
+  @Get(':id/layout')
+  async getAppLayout(@Param('id') id: string) {
+    return await this.mobileAppService.getAppLayout(id);
+  }
+  
+  @Post(':id/layout/reset')
+async resetAppLayout(@Param('id') appId: string) {
+  return await this.mobileAppService.resetAppLayout(appId);
+}
+
+
 }

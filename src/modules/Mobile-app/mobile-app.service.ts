@@ -1,155 +1,324 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { MobileApp } from './mobile-app.schema';
+import { AppDesign } from '../appDesign/appDesign.schema';
+import { AppLayout } from '../appLayout/appLayout.schema'; // Import the schema
 import { CreateMobileAppDto } from './dto/create-mobile-app.dto';
-import { AppDesignService } from '../appDesign/appDesign.service';
-import { AppLayoutService } from '../appLayout/appLayout.service';
 import { AppGenerationService } from '../app-generation/app-generation.service';
-import { UpdateAppLayoutDto } from '../appLayout/dtos/appLayout.dto';
-import { AppLayout } from '../appLayout/appLayout.schema';
+import { AppLayoutService } from '../appLayout/appLayout.service';
+
 @Injectable()
 export class MobileAppService {
   private readonly logger = new Logger(MobileAppService.name);
 
   constructor(
-    @InjectModel(MobileApp.name) private readonly mobileAppModel: Model<MobileApp>,
-    private readonly appDesignService: AppDesignService,
-    private readonly appLayoutService: AppLayoutService,
+    @InjectModel(MobileApp.name) private mobileAppModel: Model<MobileApp>,
+    @InjectModel(AppDesign.name) private appDesignModel: Model<AppDesign>,
+    @InjectModel('AppLayout') private appLayoutModel: Model<AppLayout>, // Inject the AppLayout schema correctly
     private readonly appGenerationService: AppGenerationService,
+    private readonly appLayoutService: AppLayoutService, // Inject the AppLayoutService
   ) {}
 
-  /**
-   * Create a new Mobile App.
-   */
+  // Method to create a Mobile App, linking it to AppDesign and AppLayout
   async create(createMobileAppDto: CreateMobileAppDto): Promise<MobileApp> {
-    const { appName, appDesignId, appLayoutId, repositoryId, ownerId } = createMobileAppDto;
-  
-    // Fetch or create the default layout
-    const layout = appLayoutId
-      ? await this.appLayoutService.getLayoutById(appLayoutId)
-      : await this.appLayoutService.getOrCreateDefaultLayout();
-  
-    // Fetch or create the app design
-    const design = appDesignId
-      ? await this.appDesignService.getDesignById(appDesignId)
-      : await this.appDesignService.createDefaultDesign();
-  
-    // Create the MobileApp instance
-    const newMobileApp = new this.mobileAppModel({
-      appName,
-      appDesignId: design._id,
-      appLayoutId: layout._id,
-      repositoryId,
-      ownerId,
-    });
-  
-    return newMobileApp.save();
-  }
-  
-
-  /**
-   * Reset the layout of a Mobile App to the default layout.
-   */
-  async resetAppLayout(appId: string): Promise<MobileApp> {
-    const mobileApp = await this.getMobileAppById(appId);
-
-    // Reset the layout
-    await this.appLayoutService.resetLayoutToDefault(mobileApp.appLayoutId.toString());
-
-    this.logger.log(`Reset layout for app: ${appId}`);
-    return this.mobileAppModel.findById(appId).populate('appLayoutId').exec();
-  }
-
-  /**
-   * Update the layout of a Mobile App.
-   */
-  async updateAppLayout(appId: string, layoutData: Partial<AppLayout>): Promise<MobileApp> {
-    const mobileApp = await this.getMobileAppById(appId);
-  
-    // Validate and transform `layoutData` into `UpdateAppLayoutDto`
-    const updateData: UpdateAppLayoutDto = {
-      bottomBarTabs: layoutData.bottomBarTabs || [], // Ensure `bottomBarTabs` exists
-    };
-  
-    // Update the layout
-    await this.appLayoutService.updateLayout(mobileApp.appLayoutId.toString(), updateData);
-  
-    this.logger.log(`Updated layout for app: ${appId}`);
-    return this.mobileAppModel.findById(appId).populate('appLayoutId').exec();
-  }
-  /**
-   * Update the design of a Mobile App.
-   */
-  async updateAppDesign(appId: string, designData: Partial<any>): Promise<MobileApp> {
-    const mobileApp = await this.getMobileAppById(appId);
-
-    // Update the design
-    await this.appDesignService.updateAppDesign(mobileApp.appDesignId.toString(), designData);
-
-    this.logger.log(`Updated design for app: ${appId}`);
-    return this.mobileAppModel.findById(appId).populate('appDesignId').exec();
-  }
-
-  /**
-   * Generate a Mobile App with theme and design.
-   */
-  async generateAppWithTheme(createMobileAppDto: CreateMobileAppDto): Promise<any> {
     const { appName, appDesignId, repositoryId, ownerId, userEmail } = createMobileAppDto;
 
-    // Fetch or create design and layout
-    const design = await this.appDesignService.getOrCreateDesign(appDesignId);
-    const layout = await this.appLayoutService.getOrCreateDefaultLayout();
+    // Fetch and clone the default layout
+    const defaultLayout = await this.appLayoutService.getDefaultLayout();
+    const clonedLayout = await this.appLayoutService.cloneLayout(defaultLayout._id.toString());
 
-    // Generate the app
-    const downloadUrl = await this.appGenerationService.generateApp(appName, design, userEmail);
-
-    // Save the generated app
+    // Create a new MobileApp instance
     const newMobileApp = new this.mobileAppModel({
       appName,
-      appDesignId: design._id,
-      appLayoutId: layout._id,
+      appDesignId,
+      appLayoutId: clonedLayout._id, // Use the cloned layout
       repositoryId,
       ownerId,
       userEmail,
     });
 
-    await newMobileApp.save();
-    this.logger.log(`Generated app: ${appName}`);
-    return { downloadUrl };
+    return await newMobileApp.save();
   }
 
-  /**
-   * Fetch the configuration of a Mobile App.
-   */
-  async getAppConfiguration(appId: string): Promise<any> {
-    const mobileApp = await this.mobileAppModel
-      .findById(appId)
-      .populate('appDesignId')
-      .populate('appLayoutId')
-      .exec();
+  // Reset the app layout to default
+  async resetAppLayout(appId: string): Promise<MobileApp> {
+    const mobileApp = await this.mobileAppModel.findById(appId).populate('appLayoutId').exec();
+    if (!mobileApp) throw new Error('Mobile app not found');
 
-    if (!mobileApp) {
-      this.logger.error(`Mobile app not found: ${appId}`);
-      throw new NotFoundException('Mobile app not found');
+    // Reset the layout
+    await this.appLayoutService.resetLayoutToDefault(mobileApp.appLayoutId.toString());
+    return this.mobileAppModel.findById(appId).populate('appLayoutId').exec();
+  }
+
+  // Update the AppLayout for a MobileApp
+  async updateAppLayout(id: string, layoutData: Partial<AppLayout>): Promise<MobileApp> {
+    const mobileApp = await this.mobileAppModel.findById(id).populate('appLayoutId').exec();
+    if (!mobileApp) throw new Error('Mobile app not found');
+    if (!mobileApp.appLayoutId) throw new Error('App layout not found for this mobile app');
+
+    await this.appLayoutService.updateLayout({
+      bottomBarTabs: layoutData.bottomBarTabs || [],
+    });
+
+    return this.mobileAppModel.findById(id).populate('appLayoutId').exec();
+  }
+  
+  // Fetch an AppLayout by its ID
+  async getAppLayout(appLayoutId: string): Promise<AppLayout> {
+    this.logger.debug(`Fetching app layout with id: ${appLayoutId}`);
+    const appLayout = await this.appLayoutModel.findById(appLayoutId).exec();
+    if (!appLayout) {
+      this.logger.error(`App layout not found for id: ${appLayoutId}`);
+      throw new Error('App layout not found');
     }
+    return appLayout;
+  }
 
+  // Create a default AppLayout if none is provided
+  async createAppLayoutForMobileApp(appId: string): Promise<AppLayout> {
+    const layoutTemplate = this.getDefaultLayoutTemplate();
+    const newLayout = new this.appLayoutModel({
+      ...layoutTemplate,
+      appId,
+    });
+    return await newLayout.save();
+  }
+
+  // Method to get the default layout template
+  private getDefaultLayoutTemplate() {
     return {
-      appName: mobileApp.appName,
-      appDesign: mobileApp.appDesignId,
-      appLayout: mobileApp.appLayoutId,
+      layoutName: 'Default Layout',
+      layoutConfig: {},
     };
   }
 
-  /**
-   * Helper method to fetch Mobile App by ID with error handling.
-   */
-  private async getMobileAppById(appId: string): Promise<MobileApp> {
-    const mobileApp = await this.mobileAppModel.findById(appId).exec();
+  // Create a default AppLayout
+  private async createDefaultAppLayout(): Promise<AppLayout> {
+    const defaultLayout = new this.appLayoutModel({
+      layoutName: 'Default Layout',
+      layoutConfig: {},
+    });
+    await defaultLayout.save();
+    return defaultLayout;
+  }
+  
+  
+  
+
+  // Fetch an AppDesign by its ID
+  async getAppDesign(appDesignId: string): Promise<AppDesign> {
+    this.logger.debug(`Fetching app design with id: ${appDesignId}`);
+    const appDesign = await this.appDesignModel.findById(appDesignId).exec();
+    if (!appDesign) {
+      this.logger.error(`App design not found for id: ${appDesignId}`);
+      throw new Error('App design not found');
+    }
+    return appDesign;
+  }
+
+  // Create a default AppDesign if none is provided
+  private async createDefaultAppDesign(): Promise<AppDesign> {
+    try {
+      const defaultDesign = new this.appDesignModel({
+        backgroundColor: '#FFFFFF',
+        secondaryBackgroundColor: '#F0F0F0',
+        mainTextColor: '#000000',
+        titleTextColor: '#000000',
+        importantInformationTextColor: '#FF0000',
+        accentColor: '#00BC7B',
+        secondaryAccentColor: '#B400F6',
+        bottomBarBackgroundColor: '#000000',
+        bottomBarSelectedIconColor: '#FFFFFF',
+        bottomBarUnselectedIconColor: '#AAAAAA',
+        topBarBackgroundColor: '#FF2929',
+        topBarIconTextColor: '#FFFFFF',
+        statusBarTheme: 'light',
+      });
+      await defaultDesign.save();
+      this.logger.debug(`Default app design created: ${defaultDesign._id}`);
+      return defaultDesign;
+    } catch (error) {
+      this.logger.error(`Failed to create default app design: ${error.message}`);
+      throw new Error('Could not create default app design');
+    }
+  }
+  
+
+  // Method to update the AppDesign for a MobileApp by ID
+  async updateDesign(id: string, designData: Partial<AppDesign>): Promise<MobileApp> {
+    const mobileApp = await this.mobileAppModel.findById(id).populate('appDesignId').exec();
     if (!mobileApp) {
-      this.logger.error(`Mobile app not found: ${appId}`);
-      throw new NotFoundException('Mobile app not found');
+      throw new Error('Mobile app not found');
+    }
+
+    if (!mobileApp.appDesignId) {
+      throw new Error('App design not found for this mobile app');
+    }
+
+    await this.appDesignModel.findByIdAndUpdate(mobileApp.appDesignId, { $set: designData }, { new: true }).exec();
+
+    return this.mobileAppModel.findById(id).populate('appDesignId').exec();
+  }
+
+
+  // Find a MobileApp by its ID
+  async findOne(id: string): Promise<MobileApp> {
+    this.logger.debug(`Fetching mobile app with id: ${id}`);
+    const mobileApp = await this.mobileAppModel
+      .findById(id)
+      .populate('appDesignId')
+      .populate('appLayoutId')
+      .exec();
+    if (!mobileApp) {
+      throw new Error('Mobile app not found');
     }
     return mobileApp;
   }
+
+  async updateDesignByRepositoryId(repositoryId: string, designData: Partial<AppDesign>): Promise<MobileApp> {
+    this.logger.debug(`Updating design for repositoryId: ${repositoryId}`);
+  
+    const mobileApp = await this.mobileAppModel.findOne({ repositoryId }).populate('appDesignId').exec();
+    if (!mobileApp) {
+      this.logger.error(`Mobile app not found for repositoryId: ${repositoryId}`);
+      throw new Error('Mobile app not found for this repository');
+    }
+  
+    if (!mobileApp.appDesignId) {
+      this.logger.error(`App design not found for mobile app with repositoryId: ${repositoryId}`);
+      throw new Error('App design not found for this mobile app');
+    }
+  
+    const updatedDesign = await this.appDesignModel.findByIdAndUpdate(
+      mobileApp.appDesignId,
+      { $set: designData },
+      { new: true }
+    ).exec();
+  
+    if (!updatedDesign) {
+      this.logger.error(`Failed to update design for appDesignId: ${mobileApp.appDesignId}`);
+      throw new Error('Failed to update app design');
+    }
+  
+    this.logger.debug(`Updated App Design: ${JSON.stringify(updatedDesign)}`);
+  
+    return this.mobileAppModel.findOne({ repositoryId }).populate('appDesignId').exec();
+  }
+
+  async updateLayoutByRepositoryId(repositoryId: string, layoutData: Partial<AppLayout>): Promise<MobileApp> {
+    this.logger.debug(`Updating layout for repositoryId: ${repositoryId}`);
+  
+    const mobileApp = await this.mobileAppModel.findOne({ repositoryId }).populate('appLayoutId').exec();
+    if (!mobileApp) {
+      this.logger.error(`Mobile app not found for repositoryId: ${repositoryId}`);
+      throw new Error('Mobile app not found for this repository');
+    }
+  
+    if (!mobileApp.appLayoutId) {
+      this.logger.error(`App layout not found for mobile app with repositoryId: ${repositoryId}`);
+      throw new Error('App layout not found for this mobile app');
+    }
+  
+    const updatedLayout = await this.appLayoutModel.findByIdAndUpdate(
+      mobileApp.appLayoutId,
+      { $set: layoutData },
+      { new: true }
+    ).exec();
+  
+    if (!updatedLayout) {
+      this.logger.error(`Failed to update layout for appLayoutId: ${mobileApp.appLayoutId}`);
+      throw new Error('Failed to update app layout');
+    }
+  
+    this.logger.debug(`Updated App Layout: ${JSON.stringify(updatedLayout)}`);
+  
+    return this.mobileAppModel.findOne({ repositoryId }).populate('appLayoutId').exec();
+  }
+
+  async findMobileAppByRepositoryId(repositoryId: string): Promise<MobileApp> {
+    const mobileApp = await this.mobileAppModel.findOne({ repositoryId }).populate('appDesignId').exec();
+    if (!mobileApp) {
+      throw new Error(`No mobile app found for repositoryId: ${repositoryId}`);
+    }
+    return mobileApp;
+  }
+
+  // Generate a Mobile App with the provided theme and return download URL
+  async generateAppWithTheme(createMobileAppDto: CreateMobileAppDto): Promise<any> {
+    const { appName, appDesignId, appLayoutId, repositoryId, ownerId, userEmail } = createMobileAppDto;
+  
+    // Log the received appDesignId to ensure it's being passed correctly
+    this.logger.debug(`Received appDesignId: ${appDesignId}`);
+  
+    let appDesign;
+  
+    // Ensure appDesignId is handled as an ObjectId (if using MongoDB)
+    if (appDesignId) {
+      this.logger.debug(`Attempting to fetch app design with id: ${appDesignId}`);
+  
+      try {
+        // Ensure appDesignId is properly cast as an ObjectId if necessary
+        appDesign = await this.appDesignModel.findById(appDesignId).exec();
+  
+        if (!appDesign) {
+          this.logger.warn(`Custom app design with id ${appDesignId} not found. Using default design.`);
+          appDesign = await this.createDefaultAppDesign();  // Fallback to default if the custom design is not found
+        } else {
+          this.logger.debug(`Custom app design found: ${JSON.stringify(appDesign)}`);
+        }
+      } catch (error) {
+        this.logger.error(`Error fetching custom app design: ${error.message}`);
+        appDesign = await this.createDefaultAppDesign();
+      }
+    } else {
+      // Fallback to default design if no appDesignId is provided
+      this.logger.warn('No appDesignId provided. Using default app design.');
+      appDesign = await this.createDefaultAppDesign();
+    }
+
+    let appLayout;
+  
+    // Ensure appLayoutId is handled as an ObjectId (if using MongoDB)
+    if (appLayoutId) {
+      this.logger.debug(`Attempting to fetch app layout with id: ${appLayoutId}`);
+  
+      try {
+        // Ensure appLayoutId is properly cast as an ObjectId if necessary
+        appLayout = await this.appLayoutModel.findById(appLayoutId).exec();
+  
+        if (!appLayout) {
+          this.logger.warn(`Custom app layout with id ${appLayoutId} not found. Using default layout.`);
+          appLayout = await this.createDefaultAppLayout();  // Fallback to default if the custom layout is not found
+        } else {
+          this.logger.debug(`Custom app layout found: ${JSON.stringify(appLayout)}`);
+        }
+      } catch (error) {
+        this.logger.error(`Error fetching custom app layout: ${error.message}`);
+        appLayout = await this.createDefaultAppLayout();
+      }
+    } else {
+      // Fallback to default layout if no appLayoutId is provided
+      this.logger.warn('No appLayoutId provided. Using default app layout.');
+      appLayout = await this.createDefaultAppLayout();
+    }
+  
+    // Proceed with app generation
+    const downloadUrl = await this.appGenerationService.generateApp(appName, appDesign, userEmail);
+  
+    // Save the mobile app with the generated app design and layout
+    const newMobileApp = new this.mobileAppModel({
+      appName,
+      appDesignId: appDesign._id,
+      appLayoutId: appLayout._id,
+      repositoryId,
+      ownerId,
+      userEmail,
+    });
+    await newMobileApp.save();
+  
+    return { downloadUrl };
+  }
+
+
 }
