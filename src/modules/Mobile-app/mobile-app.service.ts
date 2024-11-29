@@ -7,6 +7,7 @@ import { AppLayout } from '../appLayout/appLayout.schema'; // Import the schema
 import { CreateMobileAppDto } from './dto/create-mobile-app.dto';
 import { AppGenerationService } from '../app-generation/app-generation.service';
 import { AppLayoutService } from '../appLayout/appLayout.service';
+import { UpdateAppLayoutDto } from '../appLayout/dtos/appLayout.dto';
 
 @Injectable()
 export class MobileAppService {
@@ -22,24 +23,35 @@ export class MobileAppService {
 
   // Method to create a Mobile App, linking it to AppDesign and AppLayout
   async create(createMobileAppDto: CreateMobileAppDto): Promise<MobileApp> {
-    const { appName, appDesignId, repositoryId, ownerId, userEmail } = createMobileAppDto;
-
-    // Fetch and clone the default layout
-    const defaultLayout = await this.appLayoutService.getDefaultLayout();
-    const clonedLayout = await this.appLayoutService.cloneLayout(defaultLayout._id.toString());
-
-    // Create a new MobileApp instance
+    const { appName, repositoryId, ownerId, appDesignId } = createMobileAppDto;
+  
+    // Create a new unique AppLayout for the MobileApp
+    const newAppLayout = new this.appLayoutModel({
+      layoutType: 'default', // Set default layout type
+      bottomBarTabs: [
+        { name: 'Home', iconName: 'Home', visible: true, isHome: true },
+        { name: 'Settings', iconName: 'Settings', visible: true, isHome: false },
+        { name: 'Cart', iconName: 'ShoppingCart', visible: true, isHome: false },
+        { name: 'Offers', iconName: 'LocalOffer', visible: true, isHome: false },
+        { name: 'Account', iconName: 'AccountCircle', visible: true, isHome: false },
+      ],
+    });
+  
+    const savedAppLayout = await newAppLayout.save(); // Save the new layout in the database
+  
+    // Create a new MobileApp linked to this unique AppLayout
     const newMobileApp = new this.mobileAppModel({
       appName,
       appDesignId,
-      appLayoutId: clonedLayout._id, // Use the cloned layout
+      appLayoutId: savedAppLayout._id, // Reference the unique AppLayout ID
       repositoryId,
       ownerId,
-      userEmail,
     });
-
-    return await newMobileApp.save();
+  
+    return await newMobileApp.save(); // Save the MobileApp in the database
   }
+  
+  
 
   // Reset the app layout to default
   async resetAppLayout(appId: string): Promise<MobileApp> {
@@ -57,9 +69,11 @@ export class MobileAppService {
     if (!mobileApp) throw new Error('Mobile app not found');
     if (!mobileApp.appLayoutId) throw new Error('App layout not found for this mobile app');
 
-    await this.appLayoutService.updateLayout({
+    const updateAppLayoutDto: UpdateAppLayoutDto = {
+      ...layoutData,
       bottomBarTabs: layoutData.bottomBarTabs || [],
-    });
+    };
+    await this.appLayoutService.updateLayoutById(mobileApp.appLayoutId.toString(), updateAppLayoutDto);
 
     return this.mobileAppModel.findById(id).populate('appLayoutId').exec();
   }
