@@ -30,13 +30,19 @@ export class AuthService {
   }
 
   // Generate JWT token for a logged-in user
-  async login(user: any) {
-    const payload = { email: user.email, sub: user._id }; // sub is conventionally the user ID
-
-    return {
-      access_token: this.jwtService.sign(payload),
+  async login(user: any, includeToken: boolean = true) {
+    const payload = { email: user.email, sub: user._id };
+  
+    const response: any = {
       userId: user._id,
       email: user.email,
     };
+  
+    if (includeToken) {
+      response.access_token = this.jwtService.sign(payload);
+    }
+  
+    return response;
   }
+  
 }

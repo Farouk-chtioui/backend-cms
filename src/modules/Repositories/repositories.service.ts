@@ -21,7 +21,7 @@ export class RepositoriesService {
 
     if (!repositoryName) {
       throw new Error('Repository name cannot be null or empty');
-    }
+    }      
 
     // Create the repository
     const newRepository = new this.repositoryModel({ repositoryName, ownerId });
