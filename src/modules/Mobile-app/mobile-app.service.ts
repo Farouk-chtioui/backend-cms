@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import mongoose, { Model } from 'mongoose';
 import { MobileApp } from './mobile-app.schema';
 import { AppDesign } from '../appDesign/appDesign.schema';
 import { AppLayout } from '../appLayout/appLayout.schema'; // Import the schema
@@ -65,18 +65,31 @@ export class MobileAppService {
 
   // Update the AppLayout for a MobileApp
   async updateAppLayout(id: string, layoutData: Partial<AppLayout>): Promise<MobileApp> {
+    // Find the MobileApp by its ID and populate the appLayoutId
     const mobileApp = await this.mobileAppModel.findById(id).populate('appLayoutId').exec();
-    if (!mobileApp) throw new Error('Mobile app not found');
-    if (!mobileApp.appLayoutId) throw new Error('App layout not found for this mobile app');
-
+    if (!mobileApp) {
+      throw new Error('Mobile app not found');
+    }
+  
+    // Ensure the appLayoutId exists and is a valid ObjectId
+    const appLayoutId = mobileApp.appLayoutId?._id;
+    if (!appLayoutId || !mongoose.isValidObjectId(appLayoutId)) {
+      throw new Error('Invalid or missing App layout ID for this mobile app');
+    }
+  
+    // Prepare the update data for the AppLayout
     const updateAppLayoutDto: UpdateAppLayoutDto = {
       ...layoutData,
       bottomBarTabs: layoutData.bottomBarTabs || [],
     };
-    await this.appLayoutService.updateLayoutById(mobileApp.appLayoutId.toString(), updateAppLayoutDto);
-
+  
+    // Update the AppLayout by its ObjectId
+    await this.appLayoutService.updateLayoutById(appLayoutId.toString(), updateAppLayoutDto);
+  
+    // Return the updated MobileApp with the populated AppLayout
     return this.mobileAppModel.findById(id).populate('appLayoutId').exec();
   }
+  
   
   // Fetch an AppLayout by its ID
   async getAppLayout(appLayoutId: string): Promise<AppLayout> {
@@ -251,7 +264,7 @@ export class MobileAppService {
   }
 
   async findMobileAppByRepositoryId(repositoryId: string): Promise<MobileApp> {
-    const mobileApp = await this.mobileAppModel.findOne({ repositoryId }).populate('appDesignId').exec();
+    const mobileApp = await this.mobileAppModel.findOne({ repositoryId }).populate('appDesignId').populate('appLayoutId').exec();
     if (!mobileApp) {
       throw new Error(`No mobile app found for repositoryId: ${repositoryId}`);
     }
@@ -333,6 +346,8 @@ export class MobileAppService {
   
     return { downloadUrl };
   }
-
+  async getAppConfiguration(appId: string): Promise<MobileApp> {
+    return this.mobileAppModel.findById(appId).populate('appDesignId').populate('appLayoutId').exec();
+  }
 
 }
