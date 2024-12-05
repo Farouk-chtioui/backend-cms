@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import mongoose, { Model } from 'mongoose';
+import mongoose, { Model, Types } from 'mongoose';
 import { MobileApp } from './mobile-app.schema';
 import { AppDesign } from '../appDesign/appDesign.schema';
 import { AppLayout } from '../appLayout/appLayout.schema'; // Import the schema
@@ -54,15 +54,35 @@ export class MobileAppService {
   
 
   // Reset the app layout to default
-  async resetAppLayout(appId: string): Promise<MobileApp> {
-    const mobileApp = await this.mobileAppModel.findById(appId).populate('appLayoutId').exec();
-    if (!mobileApp) throw new Error('Mobile app not found');
-
-    // Reset the layout
-    await this.appLayoutService.resetLayoutToDefault(mobileApp.appLayoutId.toString());
-    return this.mobileAppModel.findById(appId).populate('appLayoutId').exec();
+  async resetAppLayout(mobileAppId: string): Promise<MobileApp> {
+    console.log(`Resetting appLayout for mobileAppId: ${mobileAppId}`);
+  
+    // Validate that mobileAppId is a valid ObjectId
+    if (!Types.ObjectId.isValid(mobileAppId)) {
+      throw new Error('Invalid mobileAppId');
+    }
+  
+    // Find the MobileApp document
+    const mobileApp = await this.mobileAppModel.findById(mobileAppId).exec();
+  
+    if (!mobileApp) {
+      throw new Error('MobileApp not found');
+    }
+  
+    // Validate appLayoutId in the MobileApp document
+    const appLayoutId = mobileApp.appLayoutId;
+    console.log(`Found appLayoutId: ${appLayoutId}`);
+  
+    if (!appLayoutId || !Types.ObjectId.isValid(appLayoutId.toString())) {
+      throw new Error('Invalid appLayoutId in MobileApp');
+    }
+  
+    // Reset the app layout using the appLayout service
+    await this.appLayoutService.resetLayoutToDefault(appLayoutId.toString());
+  
+    // Return the updated MobileApp after resetting the layout
+    return this.mobileAppModel.findById(mobileAppId).populate('appLayoutId').exec();
   }
-
   // Update the AppLayout for a MobileApp
   async updateAppLayout(id: string, layoutData: Partial<AppLayout>): Promise<MobileApp> {
     // Find the MobileApp by its ID and populate the appLayoutId
