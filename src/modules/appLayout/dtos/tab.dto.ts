@@ -1,15 +1,25 @@
-import { IsString, IsBoolean } from 'class-validator';
+import { IsString, IsBoolean, IsOptional, IsEnum } from 'class-validator';
 
 export class TabDto {
   @IsString()
-  name: string;
+  @IsOptional()
+  name?: string;
 
   @IsString()
-  iconName: string;
+  @IsOptional()
+  iconName?: string;
 
   @IsBoolean()
-  visible: boolean;
+  @IsOptional()
+  visible?: boolean;
 
   @IsBoolean()
-  isHome: boolean;
+  @IsOptional()
+  isHome?: boolean;
+
+  @IsString()
+  @IsEnum(['outline', 'solid', 'mini'])
+  @IsOptional()
+  iconCategory?: 'outline' | 'solid' | 'mini';
+  
 }

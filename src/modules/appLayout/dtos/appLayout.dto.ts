@@ -1,4 +1,4 @@
-import { IsString, IsArray, ValidateNested, IsOptional } from 'class-validator';
+import { IsString, IsArray, ValidateNested, IsOptional, IsBoolean, IsEnum } from 'class-validator';
 import { Type } from 'class-transformer';
 import { TabDto } from './tab.dto';
 
@@ -13,19 +13,16 @@ export class CreateAppLayoutDto {
 }
 
 
+
+
 export class UpdateAppLayoutDto {
-  @IsOptional()
-  @IsArray()
-  bottomBarTabs?: {
-    name: string;
-    iconName: string;
-    visible: boolean;
-    isHome: boolean;
-  }[];
-
-  @IsOptional()
   @IsString()
+  @IsOptional()
   layoutType?: string;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => TabDto)
+  @IsOptional()
+  bottomBarTabs?: TabDto[];
 }
-
-

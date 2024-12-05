@@ -1,3 +1,5 @@
+// Updated: appLayout.service.ts
+
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -14,11 +16,11 @@ export class AppLayoutService {
       defaultLayout = new this.appLayoutModel({
         layoutType: 'default',
         bottomBarTabs: [
-          { name: 'Home', iconName: 'Home', visible: true, isHome: true },
-          { name: 'Settings', iconName: 'Settings', visible: true, isHome: false },
-          { name: 'Cart', iconName: 'ShoppingCart', visible: true, isHome: false },
-          { name: 'Offers', iconName: 'LocalOffer', visible: true, isHome: false },
-          { name: 'Account', iconName: 'AccountCircle', visible: true, isHome: false },
+          { name: 'Home', iconName: 'Home', visible: true, isHome: true, iconCategory: 'outline' },
+          { name: 'Settings', iconName: 'Settings', visible: true, isHome: false, iconCategory: 'outline' },
+          { name: 'Cart', iconName: 'ShoppingCart', visible: true, isHome: false, iconCategory: 'outline' },
+          { name: 'Offers', iconName: 'LocalOffer', visible: true, isHome: false, iconCategory: 'outline' },
+          { name: 'Account', iconName: 'AccountCircle', visible: true, isHome: false, iconCategory: 'outline' },
         ],
       });
       await defaultLayout.save();
@@ -54,11 +56,11 @@ export class AppLayoutService {
     }
 
     layout.bottomBarTabs = [
-      { name: 'Home', iconName: 'Home', visible: true, isHome: true },
-      { name: 'Settings', iconName: 'Settings', visible: true, isHome: false },
-      { name: 'Cart', iconName: 'ShoppingCart', visible: true, isHome: false },
-      { name: 'Offers', iconName: 'LocalOffer', visible: true, isHome: false },
-      { name: 'Account', iconName: 'AccountCircle', visible: true, isHome: false },
+      { name: 'Home', iconName: 'Home', visible: true, isHome: true, iconCategory: 'outline' },
+      { name: 'Settings', iconName: 'Settings', visible: true, isHome: false, iconCategory: 'outline' },
+      { name: 'Cart', iconName: 'ShoppingCart', visible: true, isHome: false, iconCategory: 'outline' },
+      { name: 'Offers', iconName: 'LocalOffer', visible: true, isHome: false, iconCategory: 'outline' },
+      { name: 'Account', iconName: 'AccountCircle', visible: true, isHome: false, iconCategory: 'outline' },
     ];
     await layout.save();
     return layout;
