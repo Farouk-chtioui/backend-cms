@@ -38,15 +38,16 @@ export class AppLayoutService {
 
   async updateLayoutById(layoutId: string, updateAppLayoutDto: UpdateAppLayoutDto): Promise<AppLayout> {
     const layout = await this.findById(layoutId);
-
+  
     if (!layout) {
       throw new NotFoundException(`AppLayout with ID ${layoutId} not found`);
     }
-
+  
     Object.assign(layout, updateAppLayoutDto);
     await layout.save();
     return layout;
   }
+  
 
   async resetLayoutToDefault(layoutId: string): Promise<AppLayout> {
     const layout = await this.findById(layoutId);
