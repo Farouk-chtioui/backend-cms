@@ -12,7 +12,7 @@ import {
 import { MobileAppService } from './mobile-app.service';
 import { CreateMobileAppDto } from './dto/create-mobile-app.dto';
 import { AppDesign } from '../appDesign/appDesign.schema';
-import { AppLayout } from '../appLayout/appLayout.schema'; // Import AppLayout schema
+import { AppLayout } from '../appLayout/appLayout.schema';
 
 @Controller('mobile-app')
 export class MobileAppController {
@@ -30,41 +30,26 @@ export class MobileAppController {
     return this.mobileAppService.findOne(id);
   }
 
+  // App Design Routes
+  @Get(':id/design/default')
+  async getDefaultAppDesign(@Param('id') appId: string) {
+    return await this.mobileAppService.getDefaultAppDesign(appId);
+  }
+
   @Put(':id/design')
-  async updateDesign(
-    @Param('id') id: string,
+  async updateAppDesign(
+    @Param('id') appId: string,
     @Body() designData: Partial<AppDesign>,
   ) {
-    return this.mobileAppService.updateDesign(id, designData);
+    return await this.mobileAppService.updateDesign(appId, designData);
   }
 
-  @Put(':id/repository')
-  async updateDesignByRepositoryId(
-    @Param('id') repositoryId: string,
-    @Body() designData: Partial<AppDesign>,
-  ) {
-    return this.mobileAppService.updateDesignByRepositoryId(
-      repositoryId,
-      designData,
-    );
+  @Post(':id/design/reset')
+  async resetAppDesign(@Param('id') appId: string) {
+    return await this.mobileAppService.resetAppDesign(appId);
   }
 
-  @Get(':id/design')
-  async getDesign(@Param('id') id: string) {
-    return this.mobileAppService.getAppDesign(id);
-  }
-
-  @Get(':id/repository')
-  async getByRepositoryId(@Param('id') repositoryId: string) {
-    return this.mobileAppService.findMobileAppByRepositoryId(repositoryId);
-  }
-
-  @Post('generate')
-  async generateAppWithTheme(@Body() createMobileAppDto: CreateMobileAppDto) {
-    return this.mobileAppService.generateAppWithTheme(createMobileAppDto);
-  }
-
-  // Update the AppLayout for a MobileApp
+  // App Layout Routes
   @Put(':id/layout')
   async updateAppLayout(
     @Param('id') id: string,
@@ -81,6 +66,27 @@ export class MobileAppController {
   @Post(':id/layout/reset')
   async resetAppLayout(@Param('id') appId: string) {
     return await this.mobileAppService.resetAppLayout(appId);
+  }
+
+  @Put(':id/repository')
+  async updateDesignByRepositoryId(
+    @Param('id') repositoryId: string,
+    @Body() designData: Partial<AppDesign>,
+  ) {
+    return this.mobileAppService.updateDesignByRepositoryId(
+      repositoryId,
+      designData,
+    );
+  }
+
+  @Get(':id/repository')
+  async getByRepositoryId(@Param('id') repositoryId: string) {
+    return this.mobileAppService.findMobileAppByRepositoryId(repositoryId);
+  }
+
+  @Post('generate')
+  async generateAppWithTheme(@Body() createMobileAppDto: CreateMobileAppDto) {
+    return this.mobileAppService.generateAppWithTheme(createMobileAppDto);
   }
 
   @Get(':appId/config')

@@ -8,6 +8,7 @@ import { CreateMobileAppDto } from './dto/create-mobile-app.dto';
 import { AppGenerationService } from '../app-generation/app-generation.service';
 import { AppLayoutService } from '../appLayout/appLayout.service';
 import { UpdateAppLayoutDto } from '../appLayout/dtos/appLayout.dto';
+import { AppDesignService } from '../appDesign/appDesign.service';
 
 @Injectable()
 export class MobileAppService {
@@ -19,6 +20,7 @@ export class MobileAppService {
     @InjectModel('AppLayout') private appLayoutModel: Model<AppLayout>, // Inject the AppLayout schema correctly
     private readonly appGenerationService: AppGenerationService,
     private readonly appLayoutService: AppLayoutService, // Inject the AppLayoutService
+    private readonly appDesignService: AppDesignService, // Inject the AppDesignService
   ) {}
 
   // Method to create a Mobile App, linking it to AppDesign and AppLayout
@@ -83,6 +85,37 @@ export class MobileAppService {
     // Return the updated MobileApp after resetting the layout
     return this.mobileAppModel.findById(mobileAppId).populate('appLayoutId').exec();
   }
+
+  async resetAppDesign(mobileAppId: string): Promise<MobileApp> {
+    console.log(`Resetting appDesign for mobileAppId: ${mobileAppId}`);
+  
+    // Validate that mobileAppId is a valid ObjectId
+    if (!Types.ObjectId.isValid(mobileAppId)) {
+      throw new Error('Invalid mobileAppId');
+    }
+  
+    // Find the MobileApp document
+    const mobileApp = await this.mobileAppModel.findById(mobileAppId).exec();
+  
+    if (!mobileApp) {
+      throw new Error('MobileApp not found');
+    }
+  
+    // Validate appDesignId in the MobileApp document
+    const appDesignId = mobileApp.appDesignId;
+    console.log(`Found appDesignId: ${appDesignId}`);
+  
+    if (!appDesignId || !Types.ObjectId.isValid(appDesignId.toString())) {
+      throw new Error('Invalid appDesignId in MobileApp');
+    }
+  
+    // Reset the app design using the appDesign service
+    await this.appDesignService.resetAppDesign(appDesignId.toString());
+  
+    // Return the updated MobileApp after resetting the design
+    return this.mobileAppModel.findById(mobileAppId).populate('appDesignId').exec();
+  }
+
   // Update the AppLayout for a MobileApp
   async updateAppLayout(id: string, layoutData: Partial<AppLayout>): Promise<MobileApp> {
     // Find the MobileApp by its ID and populate the appLayoutId
@@ -168,29 +201,79 @@ export class MobileAppService {
   private async createDefaultAppDesign(): Promise<AppDesign> {
     try {
       const defaultDesign = new this.appDesignModel({
-        backgroundColor: '#FFFFFF',
-        secondaryBackgroundColor: '#F0F0F0',
-        mainTextColor: '#000000',
-        titleTextColor: '#000000',
-        importantInformationTextColor: '#FF0000',
-        accentColor: '#00BC7B',
-        secondaryAccentColor: '#B400F6',
-        bottomBarBackgroundColor: '#000000',
-        bottomBarSelectedIconColor: '#FFFFFF',
-        bottomBarUnselectedIconColor: '#AAAAAA',
-        topBarBackgroundColor: '#FF2929',
-        topBarIconTextColor: '#FFFFFF',
-        statusBarTheme: 'light',
+        themeColors: {
+          light: {
+            mainAppBackground: "#FFFFFF",
+            secondaryBackground: "#F7F7F7",
+            mainText: "#000000",
+            titleText: "#333333",
+            importantText: "#2E9C00",
+            accent: "#0072F5",
+            secondaryAccent: "#7A7AFF",
+            bottomBarBackground: "#F9F9F9",
+            bottomBarSelectedIcon: "#F1C40F",
+            bottomBarUnselectedIcon: "#BDC3C7",
+            topBarBackground: "#FF9292",
+            topBarTextAndIcon: "#FFFFFF",
+          },
+          dark: {
+            mainAppBackground: "#121212",
+            secondaryBackground: "#1E1E1E",
+            mainText: "#E0E0E0",
+            titleText: "#AAAAAA",
+            importantText: "#00BC78",
+            accent: "#17C964",
+            secondaryAccent: "#5E35B1",
+            bottomBarBackground: "#000000",
+            bottomBarSelectedIcon: "#F39C12",
+            bottomBarUnselectedIcon: "#7F8C8D",
+            topBarBackground: "#2E4053",
+            topBarTextAndIcon: "#ECF0F1",
+          },
+        },
+        statusBarTheme: "light",
       });
       await defaultDesign.save();
       this.logger.debug(`Default app design created: ${defaultDesign._id}`);
       return defaultDesign;
     } catch (error) {
       this.logger.error(`Failed to create default app design: ${error.message}`);
-      throw new Error('Could not create default app design');
+      throw new Error("Could not create default app design");
     }
   }
+
+  async getDefaultAppDesign(mobileAppId: string): Promise<AppDesign> {
+    console.log(`Fetching default app design for mobileAppId: ${mobileAppId}`);
   
+    // Validate that mobileAppId is a valid ObjectId
+    if (!Types.ObjectId.isValid(mobileAppId)) {
+      throw new Error('Invalid mobileAppId');
+    }
+  
+    // Find the MobileApp document
+    const mobileApp = await this.mobileAppModel.findById(mobileAppId).exec();
+  
+    if (!mobileApp) {
+      throw new Error('MobileApp not found');
+    }
+  
+    // Validate appDesignId in the MobileApp document
+    const appDesignId = mobileApp.appDesignId;
+    console.log(`Found appDesignId: ${appDesignId}`);
+  
+    if (!appDesignId || !Types.ObjectId.isValid(appDesignId.toString())) {
+      throw new Error('Invalid appDesignId in MobileApp');
+    }
+  
+    // Fetch the default app design
+    const defaultAppDesign = await this.appDesignModel.findById(appDesignId).exec();
+  
+    if (!defaultAppDesign) {
+      throw new Error('Default app design not found');
+    }
+  
+    return defaultAppDesign;
+  }
 
   // Method to update the AppDesign for a MobileApp by ID
   async updateDesign(id: string, designData: Partial<AppDesign>): Promise<MobileApp> {
