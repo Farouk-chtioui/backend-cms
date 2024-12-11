@@ -41,7 +41,7 @@ export class MobileAppController {
     @Param('id') appId: string,
     @Body() designData: Partial<AppDesign>,
   ) {
-    return await this.mobileAppService.updateDesign(appId, designData);
+    return await this.mobileAppService.updateAppDesign(appId, designData);
   }
 
   @Post(':id/design/reset')
