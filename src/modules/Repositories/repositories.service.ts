@@ -80,4 +80,8 @@ export class RepositoriesService {
       .populate('ownerId')
       .exec();
   }
+
+  async update(id: string, updateRepositoryDto: Partial<CreateRepositoryDto>): Promise<Repository> {
+    return this.repositoryModel.findByIdAndUpdate(id, updateRepositoryDto, { new: true }).exec();
+  }
 }

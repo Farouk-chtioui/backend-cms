@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param } from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, Param } from '@nestjs/common';
 import { RepositoriesService } from './repositories.service';
 import { CreateRepositoryDto } from './CreateRepositoryDto';
 
@@ -10,13 +10,22 @@ export class RepositoriesController {
   async create(@Body() createRepositoryDto: CreateRepositoryDto) {
     return this.repositoriesService.create(createRepositoryDto);
   }
+
   @Get(':ownerId')
   async findByOwnerId(@Param('ownerId') ownerId: string) {
     return this.repositoriesService.findByOwnerId(ownerId);
   }
+
   @Get()
   async findAll() {
     return this.repositoriesService.findAll();
   }
- 
+
+  @Put(':id')
+  async update(
+    @Param('id') id: string,
+    @Body() updateRepositoryDto: Partial<CreateRepositoryDto>
+  ) {
+    return this.repositoriesService.update(id, updateRepositoryDto);
+  }
 }
