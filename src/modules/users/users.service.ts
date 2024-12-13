@@ -28,6 +28,7 @@ export class UsersService {
     const newRepository = await this.repositoriesService.create({
       repositoryName: 'my_project',
       ownerId: newUser._id.toString(),
+      isPrivate: false, // or true, depending on your requirement
     });
   
     // Add repository to user's repository list

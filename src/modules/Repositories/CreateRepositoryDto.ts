@@ -16,4 +16,15 @@ export class CreateRepositoryDto {
   @IsString()
   @IsOptional()
   appLayoutId?: string; // Ensure this is marked as required if needed
+
+  @IsString()
+  @IsOptional()
+  description?: string;
+
+  @IsNotEmpty()
+  isPrivate: boolean;
+
+  @IsString()
+  @IsOptional()
+  image?: string;
 }

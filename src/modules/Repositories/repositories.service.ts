@@ -17,14 +17,14 @@ export class RepositoriesService {
   ) {}
 
   async create(createRepositoryDto: CreateRepositoryDto): Promise<Repository> {
-    const { ownerId, repositoryName } = createRepositoryDto;
+    const { ownerId, repositoryName, description, isPrivate, image } = createRepositoryDto;
 
     if (!repositoryName) {
       throw new Error('Repository name cannot be null or empty');
-    }      
+    }
 
     // Create the repository
-    const newRepository = new this.repositoryModel({ repositoryName, ownerId });
+    const newRepository = new this.repositoryModel({ repositoryName, ownerId, description, isPrivate, image });
     await newRepository.save();
 
     try {
