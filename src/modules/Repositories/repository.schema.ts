@@ -22,6 +22,9 @@ export class Repository extends Document {
 
   @Prop({ type: String })
   image: string;
+
+  @Prop({ type: [{ type: Types.ObjectId, ref: 'User' }], default: [] })
+  team: Types.ObjectId[]; // Optional array of User IDs (team members)
 }
 
 export const RepositorySchema = SchemaFactory.createForClass(Repository);

@@ -13,31 +13,33 @@ export class UsersService {
   ) {}
 
   // Create a new user and assign a default repository to them
-  async create(email: string, password: string): Promise<User> {
-    const existingUser = await this.userModel.findOne({ email }).exec();
+  async create(email: string, username: string, password: string, profileImage?: string): Promise<User> {
+    // Check if email or username already exists
+    const existingUser = await this.userModel.findOne({ $or: [{ email }, { username }] }).exec();
     if (existingUser) {
-      throw new BadRequestException(`User with email '${email}' already exists`);
+      throw new BadRequestException(`User with email or username already exists`);
     }
-  
-    // Hash the password and create the new user
+
     const hashedPassword = await bcrypt.hash(password, 10);
-    const newUser = new this.userModel({ email, password: hashedPassword });
+    const newUser = new this.userModel({ 
+      email, 
+      username, 
+      password: hashedPassword, 
+      profileImage 
+    });
     await newUser.save();
-  
-    // Create a default repository for the new user
+
     const newRepository = await this.repositoriesService.create({
       repositoryName: 'my_project',
       ownerId: newUser._id.toString(),
-      isPrivate: false, // or true, depending on your requirement
+      isPrivate: false,
     });
-  
-    // Add repository to user's repository list
+
     newUser.repositoryIds = [this.ensureObjectId(newRepository._id)];
     await newUser.save();
-  
+
     return newUser;
   }
-  
 
   // Utility function to ensure valid ObjectId
   private ensureObjectId(id: any): Types.ObjectId {

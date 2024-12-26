@@ -13,18 +13,18 @@ export class RepositoriesService {
     @InjectModel(Repository.name) private repositoryModel: Model<Repository>,
     private readonly mobileAppService: MobileAppService,
     private readonly appDesignService: AppDesignService,
-    private readonly appLayoutService: AppLayoutService, // Inject AppLayoutService
+    private readonly appLayoutService: AppLayoutService,
   ) {}
 
   async create(createRepositoryDto: CreateRepositoryDto): Promise<Repository> {
-    const { ownerId, repositoryName, description, isPrivate, image } = createRepositoryDto;
+    const { ownerId, repositoryName, description, isPrivate, image, team } = createRepositoryDto;
 
     if (!repositoryName) {
       throw new Error('Repository name cannot be null or empty');
     }
 
-    // Create the repository
-    const newRepository = new this.repositoryModel({ repositoryName, ownerId, description, isPrivate, image });
+    // Create the repository with the team field if provided
+    const newRepository = new this.repositoryModel({ repositoryName, ownerId, description, isPrivate, image, team: team || [] });
     await newRepository.save();
 
     try {
@@ -32,7 +32,6 @@ export class RepositoriesService {
       const defaultAppDesign = await this.appDesignService.createAppDesign();
 
       // Create the mobile app associated with the repository
-      // Let the MobileAppService handle the AppLayout creation to ensure no duplication
       await this.mobileAppService.create({
         appName: repositoryName,
         appDesignId: defaultAppDesign._id.toString(),
@@ -54,6 +53,7 @@ export class RepositoriesService {
       .find()
       .populate('mobileAppId')
       .populate('ownerId')
+      .populate('team') // Populate team members
       .exec();
   }
 
@@ -62,14 +62,7 @@ export class RepositoriesService {
       .findById(id)
       .populate('mobileAppId')
       .populate('ownerId')
-      .exec();
-  }
-
-  async findone(id: string): Promise<Repository> {
-    return this.repositoryModel
-      .findById(id)
-      .populate('mobileAppId')
-      .populate('ownerId')
+      .populate('team') // Populate team members
       .exec();
   }
 
@@ -78,10 +71,29 @@ export class RepositoriesService {
       .find({ ownerId })
       .populate('mobileAppId')
       .populate('ownerId')
+      .populate('team') // Populate team members
       .exec();
   }
 
   async update(id: string, updateRepositoryDto: Partial<CreateRepositoryDto>): Promise<Repository> {
-    return this.repositoryModel.findByIdAndUpdate(id, updateRepositoryDto, { new: true }).exec();
+    const { team } = updateRepositoryDto;
+    
+    // If team is provided, update the team members
+    if (team) {
+      return this.repositoryModel
+        .findByIdAndUpdate(id, { $set: { team } }, { new: true })
+        .populate('mobileAppId')
+        .populate('ownerId')
+        .populate('team') // Populate updated team members
+        .exec();
+    }
+
+    // If no team update is provided, just update other fields
+    return this.repositoryModel
+      .findByIdAndUpdate(id, updateRepositoryDto, { new: true })
+      .populate('mobileAppId')
+      .populate('ownerId')
+      .populate('team') // Populate team members
+      .exec();
   }
 }

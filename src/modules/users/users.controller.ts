@@ -9,12 +9,16 @@ export class UsersController {
 
   @Post('register')
   async register(@Body() body) {
-    const { password, email } = body;
-    if (!password || !email) {
-      throw new BadRequestException('Password and email are required');
+    const { email, username, password, profileImage } = body;
+
+    // Validate required fields
+    if (!password || !email || !username) {
+      throw new BadRequestException('Email, username, and password are required');
     }
+
     try {
-      const newUser = await this.usersService.create(email, password);
+      // Create a new user
+      const newUser = await this.usersService.create(email, username, password, profileImage);
       return { message: 'User registered successfully', userId: newUser._id };
     } catch (error) {
       throw new BadRequestException(error.message);
@@ -24,6 +28,8 @@ export class UsersController {
   @Post('login')
   async login(@Body() body) {
     const { email, password } = body;
+
+    // Validate required fields
     if (!email || !password) {
       throw new BadRequestException('Email and password are required');
     }
@@ -50,6 +56,14 @@ export class UsersController {
 
   @Get(':userId')
   async getUserById(@Param('userId') userId: string) {
-    return this.usersService.findOneById(userId);
+    try {
+      const user = await this.usersService.findOneById(userId);
+      if (!user) {
+        throw new BadRequestException('User not found');
+      }
+      return user;
+    } catch (error) {
+      throw new BadRequestException(error.message);
+    }
   }
 }

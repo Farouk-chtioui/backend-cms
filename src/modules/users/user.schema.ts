@@ -14,6 +14,12 @@ export class User extends Document {
   @Prop({ type: [Types.ObjectId], ref: 'Repository' })
   repositoryIds: Types.ObjectId[];
 
+  @Prop({ required: true, unique: true })
+  username: string;
+
+  @Prop({ type: String, default: null })
+  profileImage: string;
+
   async comparePassword(plainPassword: string): Promise<boolean> {
     return bcrypt.compare(plainPassword, this.password);
   }

@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, IsOptional } from 'class-validator';
+import { IsNotEmpty, IsString, IsOptional, IsArray, ArrayNotEmpty } from 'class-validator';
 
 export class CreateRepositoryDto {
   @IsString()
@@ -27,4 +27,9 @@ export class CreateRepositoryDto {
   @IsString()
   @IsOptional()
   image?: string;
+
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  team?: string[]; // Optional array of userIds
 }
