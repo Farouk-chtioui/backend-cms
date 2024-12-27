@@ -23,6 +23,9 @@ export class Repository extends Document {
   @Prop({ type: String })
   image: string;
 
+  @Prop({ type: String })
+  coverImage: string;  // New optional field for cover image
+
   @Prop({ type: [{ type: Types.ObjectId, ref: 'User' }], default: [] })
   team: Types.ObjectId[]; // Optional array of User IDs (team members)
 }

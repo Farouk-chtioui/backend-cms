@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, IsOptional, IsArray, ArrayNotEmpty } from 'class-validator';
+import { IsNotEmpty, IsString, IsOptional, IsArray, ArrayNotEmpty, IsBoolean } from 'class-validator';
 
 export class CreateRepositoryDto {
   @IsString()
@@ -15,18 +15,23 @@ export class CreateRepositoryDto {
 
   @IsString()
   @IsOptional()
-  appLayoutId?: string; // Ensure this is marked as required if needed
+  appLayoutId?: string;
 
   @IsString()
   @IsOptional()
   description?: string;
 
+  @IsBoolean()
   @IsNotEmpty()
   isPrivate: boolean;
 
   @IsString()
   @IsOptional()
   image?: string;
+
+  @IsString()
+  @IsOptional()
+  coverImage?: string; // New optional field for cover image
 
   @IsArray()
   @IsString({ each: true })

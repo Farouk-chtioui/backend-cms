@@ -17,14 +17,22 @@ export class RepositoriesService {
   ) {}
 
   async create(createRepositoryDto: CreateRepositoryDto): Promise<Repository> {
-    const { ownerId, repositoryName, description, isPrivate, image, team } = createRepositoryDto;
+    const { ownerId, repositoryName, description, isPrivate, image, coverImage, team } = createRepositoryDto;
 
     if (!repositoryName) {
       throw new Error('Repository name cannot be null or empty');
     }
 
-    // Create the repository with the team field if provided
-    const newRepository = new this.repositoryModel({ repositoryName, ownerId, description, isPrivate, image, team: team || [] });
+    // Create the repository with the team and coverImage fields if provided
+    const newRepository = new this.repositoryModel({
+      repositoryName,
+      ownerId,
+      description,
+      isPrivate,
+      image,
+      coverImage,  // Include coverImage if provided
+      team: team || [],  // Default to empty array if no team is provided
+    });
     await newRepository.save();
 
     try {
@@ -53,7 +61,7 @@ export class RepositoriesService {
       .find()
       .populate('mobileAppId')
       .populate('ownerId')
-      .populate('team') // Populate team members
+      .populate('team')  // Populate team members
       .exec();
   }
 
@@ -62,7 +70,7 @@ export class RepositoriesService {
       .findById(id)
       .populate('mobileAppId')
       .populate('ownerId')
-      .populate('team') // Populate team members
+      .populate('team')  // Populate team members
       .exec();
   }
 
@@ -71,29 +79,29 @@ export class RepositoriesService {
       .find({ ownerId })
       .populate('mobileAppId')
       .populate('ownerId')
-      .populate('team') // Populate team members
+      .populate('team')  // Populate team members
       .exec();
   }
 
   async update(id: string, updateRepositoryDto: Partial<CreateRepositoryDto>): Promise<Repository> {
-    const { team } = updateRepositoryDto;
-    
-    // If team is provided, update the team members
-    if (team) {
+    const { team, coverImage } = updateRepositoryDto;
+
+    // If team or coverImage is provided, update the respective fields
+    if (team || coverImage) {
       return this.repositoryModel
-        .findByIdAndUpdate(id, { $set: { team } }, { new: true })
+        .findByIdAndUpdate(id, { $set: { team, coverImage } }, { new: true })
         .populate('mobileAppId')
         .populate('ownerId')
-        .populate('team') // Populate updated team members
+        .populate('team')  // Populate updated team members
         .exec();
     }
 
-    // If no team update is provided, just update other fields
+    // If no team or coverImage update is provided, just update other fields
     return this.repositoryModel
       .findByIdAndUpdate(id, updateRepositoryDto, { new: true })
       .populate('mobileAppId')
       .populate('ownerId')
-      .populate('team') // Populate team members
+      .populate('team')  // Populate team members
       .exec();
   }
 }
