@@ -4,20 +4,29 @@ import { Model, Types } from 'mongoose';
 import { User } from './user.schema';
 import * as bcrypt from 'bcrypt';
 import { RepositoriesService } from '../repositories/repositories.service';
+import * as fs from 'fs';
+import * as path from 'path';
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectModel(User.name) private userModel: Model<User>,
     private repositoriesService: RepositoriesService,
-  ) {}
+  ) {
+    // Ensure uploads directory exists
+    const uploadsDir = path.join(process.cwd(), 'uploads', 'profile-images');
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+  }
 
-  // Create a new user and assign a default repository to them
   async create(email: string, username: string, password: string, profileImage?: string): Promise<User> {
-    // Check if email or username already exists
-    const existingUser = await this.userModel.findOne({ $or: [{ email }, { username }] }).exec();
+    const existingUser = await this.userModel.findOne({ 
+      $or: [{ email }, { username }] 
+    }).exec();
+    
     if (existingUser) {
-      throw new BadRequestException(`User with email or username already exists`);
+      throw new BadRequestException('User with email or username already exists');
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -25,7 +34,9 @@ export class UsersService {
       email, 
       username, 
       password: hashedPassword, 
-      profileImage 
+      profileImage,
+      joinDate: new Date(),
+      lastActive: new Date()
     });
     await newUser.save();
 
@@ -41,7 +52,6 @@ export class UsersService {
     return newUser;
   }
 
-  // Utility function to ensure valid ObjectId
   private ensureObjectId(id: any): Types.ObjectId {
     if (Types.ObjectId.isValid(id)) {
       return new Types.ObjectId(id);
@@ -50,12 +60,10 @@ export class UsersService {
     }
   }
 
-  // Find a user by email
   async findOneByEmail(email: string): Promise<User> {
     return this.userModel.findOne({ email }).exec();
   }
 
-  // Find a user by ID
   async findOneById(userId: string): Promise<User> {
     const userObjectId = this.ensureObjectId(userId);
     const user = await this.userModel.findById(userObjectId).exec();
@@ -70,7 +78,67 @@ export class UsersService {
     return this.userModel.findById(userObjectId).exec();
   }
 
-  // Add repository to user when a new one is created
+  async updateUser(userId: string, updateData: Partial<User>): Promise<User> {
+    const userObjectId = this.ensureObjectId(userId);
+    const user = await this.userModel.findById(userObjectId);
+    
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Check if email or username is being changed and ensure they're unique
+    if (updateData.email || updateData.username) {
+      const existingUser = await this.userModel.findOne({
+        _id: { $ne: userObjectId },
+        $or: [
+          { email: updateData.email || '' },
+          { username: updateData.username || '' }
+        ]
+      });
+
+      if (existingUser) {
+        throw new BadRequestException('Email or username already taken');
+      }
+    }
+
+    // Update lastActive timestamp
+    updateData.lastActive = new Date();
+
+    const updatedUser = await this.userModel.findByIdAndUpdate(
+      userObjectId,
+      { $set: updateData },
+      { new: true }
+    );
+
+    if (!updatedUser) {
+      throw new NotFoundException('User not found');
+    }
+
+    return updatedUser;
+  }
+
+  async updateProfileImage(userId: string, file: Express.Multer.File): Promise<string> {
+    const user = await this.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Delete old profile image if it exists
+    if (user.profileImage) {
+      const oldImagePath = path.join(process.cwd(), user.profileImage);
+      if (fs.existsSync(oldImagePath)) {
+        fs.unlinkSync(oldImagePath);
+      }
+    }
+
+    // Update user with new image path
+    const imageUrl = `/uploads/profile-images/${file.filename}`;
+    user.profileImage = imageUrl;
+    await user.save();
+
+    return imageUrl;
+  }
+
   async addRepositoryToUser(userId: string, repositoryId: string): Promise<User> {
     const user = await this.findById(userId);
     if (!user) {
