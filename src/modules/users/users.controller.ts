@@ -15,7 +15,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { UsersService } from './users.service';
-import { User } from './user.schema';  // Add this import
+import { User } from './user.schema';
 import * as bcrypt from 'bcrypt';
 import * as jwt from 'jsonwebtoken';
 import * as path from 'path';
@@ -23,6 +23,23 @@ import * as path from 'path';
 @Controller('users')
 export class UsersController {
   constructor(private usersService: UsersService) {}
+
+  // Add new getAllUsers endpoint
+  @Get()
+  async getAllUsers() {
+    try {
+      const users = await this.usersService.findAll();
+      // Remove sensitive information from all users
+      const sanitizedUsers = users.map(user => {
+        const userObj = user.toObject();
+        delete userObj.password;
+        return userObj;
+      });
+      return sanitizedUsers;
+    } catch (error) {
+      throw new BadRequestException(error.message);
+    }
+  }
 
   @Post('register')
   async register(@Body() body) {

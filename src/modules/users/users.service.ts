@@ -20,6 +20,41 @@ export class UsersService {
     }
   }
 
+  // New method to get all users
+  async findAll(excludeFields: string[] = ['password']): Promise<User[]> {
+    try {
+      const projection = excludeFields.reduce((acc, field) => {
+        acc[field] = 0;
+        return acc;
+      }, {});
+
+      return await this.userModel
+        .find({}, projection)
+        .sort({ username: 1 }) // Sort by username alphabetically
+        .exec();
+    } catch (error) {
+      throw new BadRequestException('Failed to fetch users');
+    }
+  }
+
+  // New method to search users
+  async searchUsers(searchTerm: string): Promise<User[]> {
+    try {
+      const regex = new RegExp(searchTerm, 'i');
+      return await this.userModel
+        .find({
+          $or: [
+            { username: { $regex: regex } },
+            { email: { $regex: regex } }
+          ]
+        }, { password: 0 })
+        .limit(10)
+        .exec();
+    } catch (error) {
+      throw new BadRequestException('Failed to search users');
+    }
+  }
+
   async create(email: string, username: string, password: string, profileImage?: string): Promise<User> {
     const existingUser = await this.userModel.findOne({ 
       $or: [{ email }, { username }] 
@@ -61,94 +96,150 @@ export class UsersService {
   }
 
   async findOneByEmail(email: string): Promise<User> {
-    return this.userModel.findOne({ email }).exec();
+    try {
+      const user = await this.userModel.findOne({ email }).exec();
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
+      return user;
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new BadRequestException('Failed to find user');
+    }
   }
 
   async findOneById(userId: string): Promise<User> {
-    const userObjectId = this.ensureObjectId(userId);
-    const user = await this.userModel.findById(userObjectId).exec();
-    if (!user) {
-      throw new NotFoundException('User not found');
+    try {
+      const userObjectId = this.ensureObjectId(userId);
+      const user = await this.userModel.findById(userObjectId).exec();
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
+      return user;
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new BadRequestException('Failed to find user');
     }
-    return user;
   }
 
   async findById(id: string): Promise<User> {
-    const userObjectId = this.ensureObjectId(id);
-    return this.userModel.findById(userObjectId).exec();
+    try {
+      const userObjectId = this.ensureObjectId(id);
+      const user = await this.userModel.findById(userObjectId).exec();
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
+      return user;
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new BadRequestException('Failed to find user');
+    }
   }
 
   async updateUser(userId: string, updateData: Partial<User>): Promise<User> {
-    const userObjectId = this.ensureObjectId(userId);
-    const user = await this.userModel.findById(userObjectId);
-    
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-
-    // Check if email or username is being changed and ensure they're unique
-    if (updateData.email || updateData.username) {
-      const existingUser = await this.userModel.findOne({
-        _id: { $ne: userObjectId },
-        $or: [
-          { email: updateData.email || '' },
-          { username: updateData.username || '' }
-        ]
-      });
-
-      if (existingUser) {
-        throw new BadRequestException('Email or username already taken');
+    try {
+      const userObjectId = this.ensureObjectId(userId);
+      const user = await this.userModel.findById(userObjectId);
+      
+      if (!user) {
+        throw new NotFoundException('User not found');
       }
+
+      // Check if email or username is being changed and ensure they're unique
+      if (updateData.email || updateData.username) {
+        const existingUser = await this.userModel.findOne({
+          _id: { $ne: userObjectId },
+          $or: [
+            { email: updateData.email || '' },
+            { username: updateData.username || '' }
+          ]
+        });
+
+        if (existingUser) {
+          throw new BadRequestException('Email or username already taken');
+        }
+      }
+
+      // Update lastActive timestamp
+      updateData.lastActive = new Date();
+
+      const updatedUser = await this.userModel.findByIdAndUpdate(
+        userObjectId,
+        { $set: updateData },
+        { new: true }
+      );
+
+      if (!updatedUser) {
+        throw new NotFoundException('User not found');
+      }
+
+      return updatedUser;
+    } catch (error) {
+      if (error instanceof NotFoundException || error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException('Failed to update user');
     }
-
-    // Update lastActive timestamp
-    updateData.lastActive = new Date();
-
-    const updatedUser = await this.userModel.findByIdAndUpdate(
-      userObjectId,
-      { $set: updateData },
-      { new: true }
-    );
-
-    if (!updatedUser) {
-      throw new NotFoundException('User not found');
-    }
-
-    return updatedUser;
   }
 
   async updateProfileImage(userId: string, file: Express.Multer.File): Promise<string> {
-    const user = await this.findById(userId);
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-
-    // Delete old profile image if it exists
-    if (user.profileImage) {
-      const oldImagePath = path.join(process.cwd(), user.profileImage);
-      if (fs.existsSync(oldImagePath)) {
-        fs.unlinkSync(oldImagePath);
+    try {
+      const user = await this.findById(userId);
+      if (!user) {
+        throw new NotFoundException('User not found');
       }
+
+      // Delete old profile image if it exists
+      if (user.profileImage) {
+        const oldImagePath = path.join(process.cwd(), user.profileImage);
+        if (fs.existsSync(oldImagePath)) {
+          fs.unlinkSync(oldImagePath);
+        }
+      }
+
+      // Update user with new image path
+      const imageUrl = `/uploads/profile-images/${file.filename}`;
+      user.profileImage = imageUrl;
+      await user.save();
+
+      return imageUrl;
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new BadRequestException('Failed to update profile image');
     }
-
-    // Update user with new image path
-    const imageUrl = `/uploads/profile-images/${file.filename}`;
-    user.profileImage = imageUrl;
-    await user.save();
-
-    return imageUrl;
   }
 
   async addRepositoryToUser(userId: string, repositoryId: string): Promise<User> {
-    const user = await this.findById(userId);
-    if (!user) {
-      throw new NotFoundException('User not found');
+    try {
+      const user = await this.findById(userId);
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
+
+      const repositoryObjectId = this.ensureObjectId(repositoryId);
+      
+      // Check if repository is already added
+      if (user.repositoryIds.includes(repositoryObjectId)) {
+        throw new BadRequestException('Repository already added to user');
+      }
+
+      user.repositoryIds.push(repositoryObjectId);
+      await user.save();
+
+      return user;
+    } catch (error) {
+      if (error instanceof NotFoundException || error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException('Failed to add repository to user');
     }
-
-    const repositoryObjectId = this.ensureObjectId(repositoryId);
-    user.repositoryIds.push(repositoryObjectId);
-    await user.save();
-
-    return user;
   }
 }
