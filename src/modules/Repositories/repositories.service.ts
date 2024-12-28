@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, forwardRef, Inject } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Repository } from './repository.schema';
@@ -6,6 +6,7 @@ import { CreateRepositoryDto } from './CreateRepositoryDto';
 import { MobileAppService } from '../mobile-app/mobile-app.service';
 import { AppDesignService } from '../appDesign/appDesign.service';
 import { AppLayoutService } from '../appLayout/appLayout.service';
+import { UsersService } from '../users/users.service';
 
 @Injectable()
 export class RepositoriesService {
@@ -14,6 +15,8 @@ export class RepositoriesService {
     private readonly mobileAppService: MobileAppService,
     private readonly appDesignService: AppDesignService,
     private readonly appLayoutService: AppLayoutService,
+    @Inject(forwardRef(() => UsersService))
+    private readonly usersService: UsersService,
   ) {}
 
   async create(createRepositoryDto: CreateRepositoryDto): Promise<Repository> {
@@ -23,32 +26,29 @@ export class RepositoriesService {
       throw new Error('Repository name cannot be null or empty');
     }
 
-    // Create the repository with the team and coverImage fields if provided
     const newRepository = new this.repositoryModel({
       repositoryName,
       ownerId,
       description,
       isPrivate,
       image,
-      coverImage,  // Include coverImage if provided
-      team: team || [],  // Default to empty array if no team is provided
+      coverImage,
+      team: team || [],
+      createdAt: new Date(),
     });
     await newRepository.save();
 
     try {
-      // Create a default app design
       const defaultAppDesign = await this.appDesignService.createAppDesign();
 
-      // Create the mobile app associated with the repository
       await this.mobileAppService.create({
         appName: repositoryName,
         appDesignId: defaultAppDesign._id.toString(),
         repositoryId: newRepository._id.toString(),
         ownerId,
-        version: '', // Add any other required fields for mobile app creation
+        version: '',
       });
     } catch (error) {
-      // Rollback repository creation if mobile app creation fails
       await this.repositoryModel.findByIdAndDelete(newRepository._id);
       throw new Error(`Failed to create mobile app: ${error.message}`);
     }
@@ -61,7 +61,7 @@ export class RepositoriesService {
       .find()
       .populate('mobileAppId')
       .populate('ownerId')
-      .populate('team')  // Populate team members
+      .populate('team')
       .exec();
   }
 
@@ -70,38 +70,65 @@ export class RepositoriesService {
       .findById(id)
       .populate('mobileAppId')
       .populate('ownerId')
-      .populate('team')  // Populate team members
+      .populate('team')
       .exec();
   }
 
-  async findByOwnerId(ownerId: string): Promise<Repository[]> {
+  async findByUserAccess(userId: string): Promise<Repository[]> {
+    try {
+      // First try to get the user's email
+      const user = await this.usersService.findById(userId);
+      
+      // If we successfully got the user's email, search by both ID and email
+      if (user?.email) {
+        return this.repositoryModel
+          .find({
+            $or: [
+              { ownerId: userId },
+              { team: user.email }
+            ]
+          })
+          .populate('mobileAppId')
+          .populate('ownerId')
+          .populate('team')
+          .exec();
+      }
+    } catch (error) {
+      console.error('Error fetching user:', error);
+      // If there's any error, fall through to the default behavior
+    }
+
+    // Default behavior: search by userId in both fields
     return this.repositoryModel
-      .find({ ownerId })
+      .find({
+        $or: [
+          { ownerId: userId },
+          { team: userId }
+        ]
+      })
       .populate('mobileAppId')
       .populate('ownerId')
-      .populate('team')  // Populate team members
+      .populate('team')
       .exec();
   }
 
   async update(id: string, updateRepositoryDto: Partial<CreateRepositoryDto>): Promise<Repository> {
     const { team, coverImage } = updateRepositoryDto;
 
-    // If team or coverImage is provided, update the respective fields
     if (team || coverImage) {
       return this.repositoryModel
         .findByIdAndUpdate(id, { $set: { team, coverImage } }, { new: true })
         .populate('mobileAppId')
         .populate('ownerId')
-        .populate('team')  // Populate updated team members
+        .populate('team')
         .exec();
     }
 
-    // If no team or coverImage update is provided, just update other fields
     return this.repositoryModel
       .findByIdAndUpdate(id, updateRepositoryDto, { new: true })
       .populate('mobileAppId')
       .populate('ownerId')
-      .populate('team')  // Populate team members
+      .populate('team')
       .exec();
   }
 }

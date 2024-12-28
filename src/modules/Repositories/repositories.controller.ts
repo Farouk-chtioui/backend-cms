@@ -11,9 +11,9 @@ export class RepositoriesController {
     return this.repositoriesService.create(createRepositoryDto);
   }
 
-  @Get(':ownerId')
-  async findByOwnerId(@Param('ownerId') ownerId: string) {
-    return this.repositoriesService.findByOwnerId(ownerId);
+  @Get('user/:userId')
+  async findByUserAccess(@Param('userId') userId: string) {
+    return this.repositoriesService.findByUserAccess(userId);
   }
 
   @Get()
