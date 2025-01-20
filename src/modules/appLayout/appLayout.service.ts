@@ -16,11 +16,19 @@ export class AppLayoutService {
       defaultLayout = new this.appLayoutModel({
         layoutType: 'default',
         bottomBarTabs: [
-          { name: 'Home', iconName: 'Home', visible: true, isHome: true, iconCategory: 'outline' },
-          { name: 'Settings', iconName: 'Settings', visible: true, isHome: false, iconCategory: 'outline' },
-          { name: 'Cart', iconName: 'ShoppingCart', visible: true, isHome: false, iconCategory: 'outline' },
-          { name: 'Offers', iconName: 'LocalOffer', visible: true, isHome: false, iconCategory: 'outline' },
-          { name: 'Account', iconName: 'AccountCircle', visible: true, isHome: false, iconCategory: 'outline' },
+          { 
+            name: 'Home',
+            iconName: 'Home',
+            visible: true,
+            isHome: true,
+            iconCategory: 'outline',
+            routeType: 'screen',
+            route: '/home'
+          },
+          { name: 'Settings', iconName: 'Settings', visible: true, isHome: false, iconCategory: 'outline', routeType: 'screen', route: '/settings' },
+          { name: 'Cart', iconName: 'ShoppingCart', visible: true, isHome: false, iconCategory: 'outline', routeType: 'screen', route: '/cart' },
+          { name: 'Offers', iconName: 'LocalOffer', visible: true, isHome: false, iconCategory: 'outline', routeType: 'screen', route: '/offers' },
+          { name: 'Account', iconName: 'AccountCircle', visible: true, isHome: false, iconCategory: 'outline', routeType: 'screen', route: '/account' },
         ],
       });
       await defaultLayout.save();
@@ -57,13 +65,76 @@ export class AppLayoutService {
     }
 
     layout.bottomBarTabs = [
-      { name: 'Home', iconName: 'Home', visible: true, isHome: true, iconCategory: 'outline' },
-      { name: 'Settings', iconName: 'Settings', visible: true, isHome: false, iconCategory: 'outline' },
-      { name: 'Cart', iconName: 'ShoppingCart', visible: true, isHome: false, iconCategory: 'outline' },
-      { name: 'Offers', iconName: 'LocalOffer', visible: true, isHome: false, iconCategory: 'outline' },
-      { name: 'Account', iconName: 'AccountCircle', visible: true, isHome: false, iconCategory: 'outline' },
+      { 
+        name: 'Home',
+        iconName: 'Home',
+        visible: true,
+        isHome: true,
+        iconCategory: 'outline',
+        routeType: 'screen',
+        route: '/home'
+      },
+      { 
+        name: 'Settings',
+        iconName: 'Settings',
+        visible: true,
+        isHome: false,
+        iconCategory: 'outline',
+        routeType: 'screen',
+        route: '/settings'
+      },
+      { 
+        name: 'Cart',
+        iconName: 'ShoppingCart',
+        visible: true,
+        isHome: false,
+        iconCategory: 'outline',
+        routeType: 'screen',
+        route: '/cart'
+      },
+      { 
+        name: 'Offers',
+        iconName: 'LocalOffer',
+        visible: true,
+        isHome: false,
+        iconCategory: 'outline',
+        routeType: 'screen',
+        route: '/offers'
+      },
+      { 
+        name: 'Account',
+        iconName: 'AccountCircle',
+        visible: true,
+        isHome: false,
+        iconCategory: 'outline',
+        routeType: 'screen',
+        route: '/account'
+      }
     ];
     await layout.save();
     return layout;
+  }
+
+  async updateTabRoute(
+    layoutId: string, 
+    tabName: string, 
+    routeType: 'screen' | 'external',
+    route: string,
+    screenId?: string
+  ): Promise<AppLayout> {
+    const layout = await this.findById(layoutId);
+    const tabIndex = layout.bottomBarTabs.findIndex(tab => tab.name === tabName);
+    
+    if (tabIndex === -1) {
+      throw new NotFoundException(`Tab ${tabName} not found`);
+    }
+
+    layout.bottomBarTabs[tabIndex].routeType = routeType;
+    layout.bottomBarTabs[tabIndex].route = route;
+    if (routeType === 'screen' && screenId) {
+      layout.bottomBarTabs[tabIndex].screenId = screenId as any;
+    }
+
+    return layout.save();
   }
 }

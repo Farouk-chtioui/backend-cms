@@ -9,6 +9,7 @@ import { RepositoriesModule } from './modules/repositories/repositories.module';
 import { MobileAppModule } from './modules/mobile-app/mobile-app.module';
 import { LiveUpdatesGateway } from './live-updates/live-updates.gateway';
 import { AppLayoutModule } from './modules/appLayout/appLayout.module';
+import { ScreenModule } from './modules/screen/screen.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { AppLayoutModule } from './modules/appLayout/appLayout.module';
     RepositoriesModule,
     MobileAppModule,
     AppLayoutModule, 
+    ScreenModule,
   ],
   providers: [LiveUpdatesGateway],
 })
