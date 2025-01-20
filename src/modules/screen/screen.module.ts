@@ -1,8 +1,8 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-import { Screen, ScreenSchema } from './screen.schema';
 import { ScreenController } from './screen.controller';
 import { ScreenService } from './screen.service';
+import { Screen, ScreenSchema } from './screen.schema';
 
 @Module({
   imports: [
@@ -10,6 +10,6 @@ import { ScreenService } from './screen.service';
   ],
   controllers: [ScreenController],
   providers: [ScreenService],
-  exports: [ScreenService],
+  exports: [ScreenService], // Export ScreenService to make it available to other modules
 })
 export class ScreenModule {}

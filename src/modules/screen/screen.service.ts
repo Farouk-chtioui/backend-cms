@@ -92,4 +92,91 @@ export class ScreenService {
   async delete(id: string): Promise<void> {
     await this.screenModel.findByIdAndDelete(id).exec();
   }
+
+  async createDefaultScreens(appId: string): Promise<Screen[]> {
+    const defaultScreens = [
+      {
+        name: 'Home',
+        route: '/home',
+        elements: [],
+        description: 'Default home screen',
+        tags: ['default', 'home'],
+      },
+      {
+        name: 'Settings',
+        route: '/settings',
+        elements: [],
+        description: 'App settings screen',
+        tags: ['default', 'settings'],
+      },
+      {
+        name: 'Cart',
+        route: '/cart',
+        elements: [],
+        description: 'Shopping cart screen',
+        tags: ['default', 'cart'],
+      },
+      {
+        name: 'Offers',
+        route: '/offers',
+        elements: [],
+        description: 'Special offers screen',
+        tags: ['default', 'offers'],
+      },
+      {
+        name: 'Account',
+        route: '/account',
+        elements: [],
+        description: 'User account screen',
+        tags: ['default', 'account'],
+      },
+    ];
+
+    const createdScreens = await Promise.all(
+      defaultScreens.map(screen => this.create({
+        ...screen,
+        appId,
+        settings: {
+          backgroundColor: '#ffffff',
+          padding: 16,
+          layoutType: 'flex' as 'flex'
+        }
+      }))
+    );
+
+    return createdScreens;
+  }
+
+  async ensureDefaultScreenExists(appId: string, screenRoute: string): Promise<Screen> {
+    const existingScreen = await this.screenModel.findOne({
+      appId: new Types.ObjectId(appId),
+      route: screenRoute
+    });
+
+    if (existingScreen) {
+      return existingScreen;
+    }
+
+    const defaultScreen = {
+      name: screenRoute.substring(1).charAt(0).toUpperCase() + screenRoute.slice(2),
+      route: screenRoute,
+      appId,
+      elements: [],
+      description: `Default ${screenRoute.substring(1)} screen`,
+      tags: ['default'],
+      settings: {
+        backgroundColor: '#ffffff',
+        padding: 16,
+        layoutType: 'flex'
+      }
+    };
+
+    return this.create({
+      ...defaultScreen,
+      settings: {
+        ...defaultScreen.settings,
+        layoutType: 'flex' as 'flex'
+      }
+    });
+  }
 }

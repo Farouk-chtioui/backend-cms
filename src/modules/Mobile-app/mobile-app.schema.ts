@@ -1,24 +1,29 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
-import { AppLayout } from '../appLayout/appLayout.schema';
 import { AppDesign } from '../appDesign/appDesign.schema';
+import { AppLayout } from '../appLayout/appLayout.schema';
 
 @Schema()
 export class MobileApp extends Document {
-  @Prop({ type: String, required: true })
+  @Prop({ required: true })
   appName: string;
 
-  @Prop({ type: Types.ObjectId, ref: 'AppDesign', required: true }) // Reference AppDesign
-  appDesignId: AppDesign;
+  @Prop({ type: Types.ObjectId, ref: 'AppDesign' })
+  appDesignId: Types.ObjectId | AppDesign;
 
-  @Prop({ type: Types.ObjectId, ref: 'AppLayout', required: true }) // Reference AppLayout
-  appLayoutId: AppLayout;
+  @Prop({ type: Types.ObjectId, ref: 'AppLayout' })
+  appLayoutId: Types.ObjectId | AppLayout;
 
-  @Prop({ type: String, required: true }) // Repository reference
+  @Prop({ required: true })
   repositoryId: string;
 
-  @Prop({ type: String, required: true }) // Owner reference
+  @Prop({ required: true })
   ownerId: string;
+
+  @Prop()
+  userEmail?: string;
+
+  // ...any other properties...
 }
 
 export const MobileAppSchema = SchemaFactory.createForClass(MobileApp);

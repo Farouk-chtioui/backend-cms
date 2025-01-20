@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsArray, IsOptional, IsEnum, IsBoolean, ValidateNested } from 'class-validator';
+import { IsString, IsNotEmpty, IsArray, IsOptional, IsEnum, IsBoolean, ValidateNested, IsMongoId } from 'class-validator';
 import { Type } from 'class-transformer';
 import { TabDto } from './tab.dto';
 import { Types } from 'mongoose';
@@ -32,6 +32,9 @@ class BottomBarTabDto {
 }
 
 export class CreateAppLayoutDto {
+  @IsMongoId()
+  appId: string;
+
   @IsString()
   layoutType: string;
 
@@ -42,6 +45,10 @@ export class CreateAppLayoutDto {
 }
 
 export class UpdateAppLayoutDto {
+  @IsOptional()
+  @IsMongoId()
+  appId?: string;
+
   @IsString()
   @IsOptional()
   layoutType?: string;

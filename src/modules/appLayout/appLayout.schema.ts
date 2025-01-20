@@ -5,6 +5,9 @@ import { Document, Types } from 'mongoose';
 
 @Schema()
 export class AppLayout extends Document {
+  @Prop({ type: Types.ObjectId, ref: 'MobileApp', required: true })
+  appId: Types.ObjectId;
+
   @Prop({ type: String, required: true }) // e.g., 'tabs', 'default'
   layoutType: string;
 
