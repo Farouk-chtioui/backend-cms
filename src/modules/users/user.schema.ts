@@ -3,6 +3,11 @@ import { Document, SchemaTypes, Types } from 'mongoose';
 import * as bcrypt from 'bcrypt';
 import { Repository } from '../repositories/repository.schema';
 
+export enum UserRole {
+  ADMIN = 'admin',
+  USER = 'user'
+}
+
 @Schema({ timestamps: true })
 export class User extends Document {
   @Prop({ required: true, unique: true })
@@ -35,8 +40,12 @@ export class User extends Document {
   @Prop({ type: String, default: null })
   twitterUrl: string;
 
-  @Prop({ type: String, default: 'user' })
-  role: string;
+  @Prop({ 
+    type: String, 
+    enum: UserRole,
+    default: UserRole.USER 
+  })
+  role: UserRole;
 
   @Prop({ type: Date, default: Date.now })
   joinDate: Date;

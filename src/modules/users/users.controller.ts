@@ -15,7 +15,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { UsersService } from './users.service';
-import { User } from './user.schema';
+import { User, UserRole } from './user.schema';
 import * as bcrypt from 'bcrypt';
 import * as jwt from 'jsonwebtoken';
 import * as path from 'path';
@@ -24,12 +24,10 @@ import * as path from 'path';
 export class UsersController {
   constructor(private usersService: UsersService) {}
 
-  // Add new getAllUsers endpoint
   @Get()
   async getAllUsers() {
     try {
       const users = await this.usersService.findAll();
-      // Remove sensitive information from all users
       const sanitizedUsers = users.map(user => {
         const userObj = user.toObject();
         delete userObj.password;
@@ -43,14 +41,25 @@ export class UsersController {
 
   @Post('register')
   async register(@Body() body) {
-    const { email, username, password, profileImage } = body;
+    const { email, username, password, profileImage, role } = body;
 
     if (!password || !email || !username) {
       throw new BadRequestException('Email, username, and password are required');
     }
 
+    // Validate role if provided
+    if (role && !Object.values(UserRole).includes(role)) {
+      throw new BadRequestException('Invalid role specified');
+    }
+
     try {
-      const newUser = await this.usersService.create(email, username, password, profileImage);
+      const newUser = await this.usersService.create(
+        email, 
+        username, 
+        password, 
+        profileImage,
+        role || UserRole.USER
+      );
       return { message: 'User registered successfully', userId: newUser._id };
     } catch (error) {
       throw new BadRequestException(error.message);
@@ -75,9 +84,17 @@ export class UsersController {
       throw new BadRequestException('Invalid email or password');
     }
 
-    const token = jwt.sign({ id: user._id, email: user.email }, process.env.JWT_SECRET, {
-      expiresIn: '1h',
-    });
+    const token = jwt.sign(
+      { 
+        id: user._id, 
+        email: user.email,
+        role: user.role // Include role in JWT token
+      }, 
+      process.env.JWT_SECRET, 
+      {
+        expiresIn: '1h',
+      }
+    );
 
     return { message: 'Login successful', token };
   }
@@ -90,7 +107,6 @@ export class UsersController {
         throw new BadRequestException('User not found');
       }
       
-      // Remove sensitive information
       const userResponse = user.toObject();
       delete userResponse.password;
       

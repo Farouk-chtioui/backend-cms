@@ -1,7 +1,7 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { User } from './user.schema';
+import { User, UserRole } from './user.schema';
 import * as bcrypt from 'bcrypt';
 import { RepositoriesService } from '../repositories/repositories.service';
 import * as fs from 'fs';
@@ -20,7 +20,6 @@ export class UsersService {
     }
   }
 
-  // New method to get all users
   async findAll(excludeFields: string[] = ['password']): Promise<User[]> {
     try {
       const projection = excludeFields.reduce((acc, field) => {
@@ -30,14 +29,13 @@ export class UsersService {
 
       return await this.userModel
         .find({}, projection)
-        .sort({ username: 1 }) // Sort by username alphabetically
+        .sort({ username: 1 })
         .exec();
     } catch (error) {
       throw new BadRequestException('Failed to fetch users');
     }
   }
 
-  // New method to search users
   async searchUsers(searchTerm: string): Promise<User[]> {
     try {
       const regex = new RegExp(searchTerm, 'i');
@@ -55,7 +53,17 @@ export class UsersService {
     }
   }
 
-  async create(email: string, username: string, password: string, profileImage?: string): Promise<User> {
+  async create(
+    email: string, 
+    username: string, 
+    password: string, 
+    profileImage?: string,
+    role: UserRole = UserRole.USER
+  ): Promise<User> {
+    if (!Object.values(UserRole).includes(role)) {
+      throw new BadRequestException('Invalid role specified');
+    }
+
     const existingUser = await this.userModel.findOne({ 
       $or: [{ email }, { username }] 
     }).exec();
@@ -70,6 +78,7 @@ export class UsersService {
       username, 
       password: hashedPassword, 
       profileImage,
+      role,
       joinDate: new Date(),
       lastActive: new Date()
     });
@@ -149,6 +158,11 @@ export class UsersService {
       
       if (!user) {
         throw new NotFoundException('User not found');
+      }
+
+      // Validate role if it's being updated
+      if (updateData.role && !Object.values(UserRole).includes(updateData.role)) {
+        throw new BadRequestException('Invalid role specified');
       }
 
       // Check if email or username is being changed and ensure they're unique
