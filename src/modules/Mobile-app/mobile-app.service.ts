@@ -27,43 +27,26 @@ export class MobileAppService {
 
   // Method to create a Mobile App, linking it to AppDesign and AppLayout
 async create(createMobileAppDto: CreateMobileAppDto): Promise<MobileApp> {
-  const { appName, repositoryId, ownerId, appDesignId } = createMobileAppDto;
+  try {
+    // First create the mobile app
+    const app = new this.mobileAppModel(createMobileAppDto);
+    const savedApp = await app.save();
 
-  // Step 1: Create a new unique AppLayout for the MobileApp
-  const newAppLayout = new this.appLayoutModel({
-    layoutType: 'default', // Set default layout type
-    bottomBarTabs: [
-      { name: 'Home', iconName: 'Home', visible: true, isHome: true },
-      { name: 'Settings', iconName: 'Settings', visible: true, isHome: false },
-      { name: 'Cart', iconName: 'ShoppingCart', visible: true, isHome: false },
-      { name: 'Offers', iconName: 'LocalOffer', visible: true, isHome: false },
-      { name: 'Account', iconName: 'AccountCircle', visible: true, isHome: false },
-    ],
-  });
+    // Create layout with the saved app's ID
+    const layout = await this.appLayoutService.createAppLayout(savedApp._id.toString());
+    
+    // Update the app with the layout reference
+    savedApp.appLayoutId = layout._id as Types.ObjectId;
+    const updatedApp = await savedApp.save();
 
-  const savedAppLayout = await newAppLayout.save(); // Save the new layout in the database
-
-  // Step 2: Use provided AppDesignId or create a default AppDesign
-  let appDesign;
-  if (appDesignId) {
-    appDesign = await this.appDesignModel.findById(appDesignId).exec();
-    if (!appDesign) {
-      throw new BadRequestException('Invalid AppDesign ID');
-    }
-  } else {
-    appDesign = await this.createDefaultAppDesign();
+    return this.mobileAppModel
+      .findById(updatedApp._id)
+      .populate('appLayoutId')
+      .populate('appDesignId')
+      .exec();
+  } catch (error) {
+    throw new BadRequestException(`Failed to create mobile app: ${error.message}`);
   }
-
-  // Step 3: Create and save the MobileApp with embedded AppDesign
-  const newMobileApp = new this.mobileAppModel({
-    appName,
-    appDesignId: appDesign._id, // Reference AppDesign
-    appLayoutId: savedAppLayout._id,  // Reference AppLayout
-    repositoryId,
-    ownerId,
-  });
-
-  return await newMobileApp.save();
 }
   
 
@@ -175,6 +158,7 @@ async create(createMobileAppDto: CreateMobileAppDto): Promise<MobileApp> {
     // Prepare the update data for the AppLayout
     const updateAppLayoutDto: UpdateAppLayoutDto = {
       ...layoutData,
+      appId: appLayoutId.toString(),
       bottomBarTabs: layoutData.bottomBarTabs || [],
     };
   

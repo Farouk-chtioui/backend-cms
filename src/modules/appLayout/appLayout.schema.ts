@@ -1,10 +1,13 @@
 // Updated: appLayout.schema.ts
 
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import { Document, Types } from 'mongoose';
 
 @Schema()
 export class AppLayout extends Document {
+  @Prop({ type: Types.ObjectId, ref: 'MobileApp', required: true })
+  appId: Types.ObjectId;
+
   @Prop({ type: String, required: true }) // e.g., 'tabs', 'default'
   layoutType: string;
 
@@ -20,6 +23,13 @@ export class AppLayout extends Document {
           enum: ['outline', 'solid', 'mini'],
           default: 'outline',
         },
+        routeType: {
+          type: String,
+          enum: ['screen', 'external'],
+          default: 'screen'
+        },
+        route: String,
+        screenId: { type: Types.ObjectId, ref: 'Screen', required: false }
       },
     ],
     default: [],
@@ -30,6 +40,9 @@ export class AppLayout extends Document {
     visible: boolean;
     isHome: boolean;
     iconCategory: 'outline' | 'solid' | 'mini';
+    routeType: 'screen' | 'external';
+    route: string;
+    screenId?: Types.ObjectId;
   }[];
 }
 
