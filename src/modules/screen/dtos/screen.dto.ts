@@ -1,6 +1,87 @@
-import { IsString, IsNotEmpty, IsObject, IsOptional, IsBoolean, IsArray, ValidateNested } from 'class-validator';
+import { IsString, IsNotEmpty, IsObject, IsOptional, IsBoolean, IsArray, ValidateNested, IsEnum, IsNumber } from 'class-validator';
 import { Type } from 'class-transformer';
-import { ScreenElement } from '../types/screen-element.types';
+import { ScreenWidget } from '../types/screen-widget.types';
+import { ScreenType } from '../types/screen.types';
+
+export class ScreenSettingsDto {
+  @IsString()
+  @IsOptional()
+  backgroundColor?: string;
+
+  @IsNumber()
+  @IsOptional()
+  padding?: number;
+
+  @IsEnum(['flex', 'grid', 'custom'])
+  @IsOptional()
+  layoutType?: 'flex' | 'grid' | 'custom';
+
+  @IsObject()
+  @IsOptional()
+  customSettings?: Record<string, any>;
+}
+
+export class ScreenMetadataDto {
+  @IsNumber()
+  @IsOptional()
+  order?: number;
+
+  @IsBoolean()
+  @IsOptional()
+  showThumbnails?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  showSearch?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  showFilters?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  showCategories?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  enableLocation?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  showFavorites?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  showSharing?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  enableNotifications?: boolean;
+
+  @IsEnum(['grid', 'list', 'map', 'calendar'])
+  @IsOptional()
+  layout?: 'grid' | 'list' | 'map' | 'calendar';
+
+  @IsBoolean()
+  @IsOptional()
+  requiresTicket?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  vipOnly?: boolean;
+
+  @IsString()
+  @IsOptional()
+  primaryColor?: string;
+
+  @IsString()
+  @IsOptional()
+  originalScreenId?: string;
+
+  @IsObject()
+  @IsOptional()
+  additionalMetadata?: Record<string, any>;
+}
 
 export class CreateScreenDto {
   @IsString()
@@ -15,18 +96,20 @@ export class CreateScreenDto {
   @IsNotEmpty()
   appId: string;
 
+  @IsEnum(ScreenType, {
+    message: 'screenType must be one of the valid screen types'
+  })
+  screenType: ScreenType;
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => Object)
-  elements: ScreenElement[];
+  widgets: ScreenWidget[];
 
-  @IsObject()
+  @ValidateNested()
+  @Type(() => ScreenSettingsDto)
   @IsOptional()
-  settings?: {
-    backgroundColor?: string;
-    padding?: number;
-    layoutType?: 'flex' | 'grid';
-  };
+  settings?: ScreenSettingsDto;
 
   @IsBoolean()
   @IsOptional()
@@ -37,12 +120,14 @@ export class CreateScreenDto {
   description?: string;
 
   @IsArray()
+  @IsString({ each: true })
   @IsOptional()
   tags?: string[];
 
-  @IsObject()
+  @ValidateNested()
+  @Type(() => ScreenMetadataDto)
   @IsOptional()
-  metadata?: Record<string, any>;
+  metadata?: ScreenMetadataDto;
 }
 
 export class UpdateScreenDto {
@@ -54,19 +139,26 @@ export class UpdateScreenDto {
   @IsOptional()
   route?: string;
 
+  @IsString()
+  @IsOptional()
+  appId?: string;
+
+  @IsEnum(ScreenType, {
+    message: 'screenType must be one of the valid screen types'
+  })
+  @IsOptional()
+  screenType?: ScreenType;
+
   @IsArray()
   @IsOptional()
   @ValidateNested({ each: true })
   @Type(() => Object)
-  elements?: ScreenElement[];
+  widgets?: ScreenWidget[];
 
-  @IsObject()
+  @ValidateNested()
+  @Type(() => ScreenSettingsDto)
   @IsOptional()
-  settings?: {
-    backgroundColor?: string;
-    padding?: number;
-    layoutType?: 'flex' | 'grid';
-  };
+  settings?: ScreenSettingsDto;
 
   @IsBoolean()
   @IsOptional()
@@ -77,24 +169,18 @@ export class UpdateScreenDto {
   description?: string;
 
   @IsArray()
+  @IsString({ each: true })
   @IsOptional()
   tags?: string[];
 
-  @IsObject()
+  @ValidateNested()
+  @Type(() => ScreenMetadataDto)
   @IsOptional()
-  metadata?: Record<string, any>;
+  metadata?: ScreenMetadataDto;
 }
 
-export class ScreenElementDto {
-  @IsString()
+export class UpdateScreenOrderDto {
+  @IsNumber()
   @IsNotEmpty()
-  type: string;
-
-  @IsObject()
-  @IsNotEmpty()
-  content: any;
-
-  @IsObject()
-  @IsOptional()
-  style?: Record<string, any>;
+  order: number;
 }
