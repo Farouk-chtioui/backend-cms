@@ -1,5 +1,4 @@
-import { IsString, IsEnum, IsBoolean, IsNumber, IsObject, ValidateNested, IsOptional } from 'class-validator';
-import { Type } from 'class-transformer';
+import { IsString, IsEnum, IsNumber, IsObject, IsOptional } from 'class-validator';
 import { OnboardingScreenCategory, OnboardingScreenType } from '../../../types/onboarding-screen.types';
 
 export class CreateOnboardingScreenDto {
@@ -20,14 +19,6 @@ export class CreateOnboardingScreenDto {
 
   @IsString()
   screenType: OnboardingScreenType;
-
-  @IsBoolean()
-  @IsOptional()
-  enabled?: boolean = true;
-
-  @IsBoolean()
-  @IsOptional()  
-  isCustom?: boolean = false;
 
   @IsNumber()
   order: number;

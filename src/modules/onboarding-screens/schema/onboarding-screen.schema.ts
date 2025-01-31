@@ -24,20 +24,11 @@ export class OnboardingScreen {
   @Prop({ required: true })
   screenType: OnboardingScreenType;
 
-  @Prop({ default: true })
-  enabled: boolean;
-
-  @Prop({ default: false })
-  isCustom: boolean;
-
   @Prop({ default: 0 })
   order: number;
 
   @Prop({ type: Object, default: {} })
   metadata: Record<string, any>;
-
-  @Prop({ default: true })
-  isActive: boolean;
 }
 
 export const OnboardingScreenSchema = SchemaFactory.createForClass(OnboardingScreen);

@@ -52,14 +52,4 @@ import {
     async reorder(@Param('appId') appId: string, @Body() reorderScreensDto: ReorderScreensDto) {
       return this.onboardingScreensService.reorder(appId, reorderScreensDto);
     }
-  
-    @Post('app/:appId/create-defaults')
-    async createDefaultScreens(
-      @Param('appId') appId: string,
-      @Query('category') category?: OnboardingScreenCategory,
-      @Query('screenType') screenType?: OnboardingScreenType,
-    ) {
-      return this.onboardingScreensService.ensureDefaultScreenExists(appId, category, screenType);
-    }
   }
-  
