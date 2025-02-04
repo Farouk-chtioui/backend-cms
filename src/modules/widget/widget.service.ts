@@ -19,6 +19,7 @@ export class WidgetService {
   async findAll(): Promise<Widget[]> {
     return this.widgetModel.find().exec();
   }
+ 
 
   async findOne(id: string): Promise<Widget> {
     const widget = await this.widgetModel.findById(id).exec();

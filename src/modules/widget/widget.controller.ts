@@ -15,6 +15,10 @@ export class WidgetController {
   async findAll() {
     return this.widgetService.findAll();
   }
+  @Get(':mobileAppId')
+  async findByMobileApp(@Param('mobileAppId') mobileAppId: string) {
+    return this.widgetService.findByMobileApp(mobileAppId);
+  }
 
   @Get(':id')
   async findOne(@Param('id') id: string) {

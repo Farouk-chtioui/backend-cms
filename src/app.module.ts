@@ -12,6 +12,7 @@ import { AppLayoutModule } from './modules/appLayout/appLayout.module';
 import { ScreenModule } from './modules/screen/screen.module';
 import { OnboardingScreensModule } from './modules/onboarding-screens/onboardingscreens.module';
 import { WidgetModule } from './modules/widget/widget.module';
+import { WidgetScreenModule } from './modules/widgetscreen/widgetscreen.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
@@ -31,7 +32,8 @@ import { WidgetModule } from './modules/widget/widget.module';
     AppLayoutModule, 
     ScreenModule,
     OnboardingScreensModule,
-    WidgetModule
+    WidgetModule,
+    WidgetScreenModule
   ],
   providers: [LiveUpdatesGateway],
 })
