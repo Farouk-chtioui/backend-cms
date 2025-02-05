@@ -10,7 +10,9 @@ import { MobileAppModule } from './modules/mobile-app/mobile-app.module';
 import { LiveUpdatesGateway } from './live-updates/live-updates.gateway';
 import { AppLayoutModule } from './modules/appLayout/appLayout.module';
 import { ScreenModule } from './modules/screen/screen.module';
-
+import { OnboardingScreensModule } from './modules/onboarding-screens/onboardingscreens.module';
+import { WidgetModule } from './modules/widget/widget.module';
+import { WidgetScreenModule } from './modules/widgetscreen/widgetscreen.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
@@ -29,6 +31,9 @@ import { ScreenModule } from './modules/screen/screen.module';
     MobileAppModule,
     AppLayoutModule, 
     ScreenModule,
+    OnboardingScreensModule,
+    WidgetModule,
+    WidgetScreenModule
   ],
   providers: [LiveUpdatesGateway],
 })
