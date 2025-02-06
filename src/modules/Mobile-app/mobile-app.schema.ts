@@ -23,7 +23,6 @@ export class MobileApp extends Document {
   @Prop()
   userEmail?: string;
 
-  // ...any other properties...
 }
 
 export const MobileAppSchema = SchemaFactory.createForClass(MobileApp);
