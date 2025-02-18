@@ -12,6 +12,8 @@ import { AppLayoutModule } from './modules/appLayout/appLayout.module';
 import { ScreenModule } from './modules/screen/screen.module';
 import { OnboardingScreensModule } from './modules/onboarding-screens/onboardingscreens.module';
 import { ImagesModule } from './modules/images/images.module';
+import { WidgetsModule } from './modules/widgets/widgets.module';
+import { WidgetScreensModule } from './modules/widget-screens/widget-screen.module';
 
 @Module({
   imports: [
@@ -32,7 +34,9 @@ import { ImagesModule } from './modules/images/images.module';
     AppLayoutModule, 
     ScreenModule,
     OnboardingScreensModule,
-    ImagesModule
+    ImagesModule,
+    WidgetsModule,
+    WidgetScreensModule
   ],
   providers: [LiveUpdatesGateway],
 })
