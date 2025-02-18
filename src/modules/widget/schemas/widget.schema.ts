@@ -6,7 +6,16 @@ export const WidgetSchema = new mongoose.Schema({
   type: { type: String, required: true }, // e.g. "text-content", "carousel", etc.
   category: { type: String, required: true },
   // The widget’s data gathered from the various forms:
-  content: { type: mongoose.Schema.Types.Mixed, default: {} },
+  content: { 
+    type: mongoose.Schema.Types.Mixed, 
+    default: {}, 
+    validate: {
+      validator(v: any) {
+        return JSON.stringify(v).length <= 6000000; 
+      },
+      message: "Widget content is too large. Please reduce content."
+    }
+  },
   style: { type: mongoose.Schema.Types.Mixed, default: {} },
   mobileOptions: { type: mongoose.Schema.Types.Mixed, default: {} },
   interactions: { type: mongoose.Schema.Types.Mixed, default: {} },
