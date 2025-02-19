@@ -74,6 +74,10 @@ export class RepositoriesService {
       .exec();
   }
 
+  async delete(id: string): Promise<Repository> {
+    return this.repositoryModel.findByIdAndDelete(id).exec();
+  }
+
   async findByUserAccess(userId: string): Promise<Repository[]> {
     try {
       // First try to get the user's email

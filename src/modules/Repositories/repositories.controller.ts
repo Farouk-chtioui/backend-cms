@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Body, Param } from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, Param, Delete } from '@nestjs/common';
 import { RepositoriesService } from './repositories.service';
 import { CreateRepositoryDto } from './CreateRepositoryDto';
 
@@ -27,5 +27,10 @@ export class RepositoriesController {
     @Body() updateRepositoryDto: Partial<CreateRepositoryDto>
   ) {
     return this.repositoriesService.update(id, updateRepositoryDto);
+  }
+
+  @Delete(':id')
+  async delete(@Param('id') id: string) {
+    return this.repositoriesService.delete(id);
   }
 }

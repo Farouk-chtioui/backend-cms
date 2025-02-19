@@ -218,4 +218,13 @@ export class AppLayoutService {
 
     return layout.save();
   }
+
+
+  async updateTabsOrder(layoutId: string, tabNames: string[]): Promise<AppLayout> {
+    const layout = await this.findById(layoutId);
+    const tabs = layout.bottomBarTabs;
+    const newTabs = tabNames.map(tabName => tabs.find(tab => tab.name === tabName));
+    layout.bottomBarTabs = newTabs;
+    return layout.save();
+  }
 }
