@@ -25,5 +25,6 @@ import { extname } from 'path';
   ],
   controllers: [ImagesController],
   providers: [ImagesService],
+  exports: [ImagesService],
 })
 export class ImagesModule {}

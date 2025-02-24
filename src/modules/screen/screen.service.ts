@@ -5,11 +5,13 @@ import { Screen } from './screen.schema';
 import { CreateScreenDto, UpdateScreenDto } from './dtos/screen.dto';
 import { ScreenWidget } from './types/screen-widget.types';
 import { ScreenType } from './types/screen.types';
+import { WidgetService } from '../widget/widget.service'; // New import
 
 @Injectable()
 export class ScreenService {
   constructor(
-    @InjectModel(Screen.name) private screenModel: Model<Screen>
+    @InjectModel(Screen.name) private screenModel: Model<Screen>,
+    private readonly widgetService: WidgetService // New dependency
   ) {}
 
   async create(createScreenDto: CreateScreenDto): Promise<Screen> {
@@ -69,6 +71,7 @@ export class ScreenService {
     }
   }
 
+  // Updated: Require widgets to be assigned by id only.
   private validateScreenWidgets(widgets: ScreenWidget[]) {
     if (!Array.isArray(widgets)) {
       throw new BadRequestException('Screen widgets must be an array');
@@ -76,32 +79,23 @@ export class ScreenService {
 
     widgets.forEach(widget => {
       if (!widget.type || !widget.id) {
-        throw new BadRequestException('Each widget must have a type and id');
-      }
-
-      switch (widget.type) {
-        case 'text':
-          if (!widget.content || typeof widget.content !== 'string') {
-            throw new BadRequestException('Text widget must have string content');
-          }
-          break;
-        case 'image':
-          if (!widget.url || typeof widget.url !== 'string') {
-            throw new BadRequestException('Image widget must have valid URL');
-          }
-          break;
-        case 'container':
-          if (!Array.isArray(widget.children)) {
-            throw new BadRequestException('Container widget must have children array');
-          }
-          this.validateScreenWidgets(widget.children);
-          break;
+        throw new BadRequestException('Each widget must have a type and an id');
       }
     });
   }
 
-  async findAll(): Promise<Screen[]> {
-    return this.screenModel.find().sort({ 'metadata.order': 1 }).exec();
+  // Updated: Populate widgets using the widget service and assign id from _id if not present.
+  private async populateWidgets(screen: Screen): Promise<Screen> {
+    screen.widgets = await Promise.all(
+      screen.widgets.map(async (widget: ScreenWidget) => {
+        const foundWidget = await this.widgetService.findOne(widget.id);
+        if (!foundWidget.id) {
+          foundWidget.id = foundWidget._id.toString();
+        }
+        return foundWidget as ScreenWidget;
+      })
+    );
+    return screen;
   }
 
   async findById(id: string): Promise<Screen> {
@@ -110,11 +104,16 @@ export class ScreenService {
       if (!screen) {
         throw new NotFoundException(`Screen with ID ${id} not found`);
       }
-      return screen;
+      const populatedScreen = await this.populateWidgets(screen);
+      return populatedScreen;
     } catch (error) {
       if (error instanceof NotFoundException) throw error;
       throw new BadRequestException('Invalid screen ID');
     }
+  }
+
+  async findAll(): Promise<Screen[]> {
+    return this.screenModel.find().sort({ 'metadata.order': 1 }).exec();
   }
 
   async findByAppId(appId: string): Promise<Screen[]> {

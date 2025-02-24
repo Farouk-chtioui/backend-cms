@@ -19,6 +19,7 @@ export type BaseWidget = {
     type: 'image';
     url: string;
     alt?: string;
+    content?: any; // Added to support inline widget content
     style?: {
       width?: string;
       height?: string;
@@ -29,6 +30,7 @@ export type BaseWidget = {
   export type ContainerWidget = BaseWidget & {
     type: 'container';
     children: ScreenWidget[];
+    content?: any; // Added to support inline widget content
     style?: {
       display?: 'flex' | 'grid';
       gap?: number;
@@ -37,4 +39,6 @@ export type BaseWidget = {
     };
   }
   
-  export type ScreenWidget = TextWidget | ImageWidget | ContainerWidget;
+  export type ScreenWidget = TextWidget | ImageWidget | ContainerWidget & {
+    content?: any; // Added to support inline widget content
+  };

@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common'; // Import ValidationPipe
 import * as express from 'express';
+import { seedAdminUser } from './seed/admin.seed';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -25,5 +26,8 @@ async function bootstrap() {
   }));
 
   await app.listen(3001);
+  
+  // Seed default admin account
+  await seedAdminUser(app);
 }
 bootstrap();
