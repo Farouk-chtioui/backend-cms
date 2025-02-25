@@ -3,7 +3,6 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Screen } from './screen.schema';
 import { CreateScreenDto, UpdateScreenDto } from './dtos/screen.dto';
-import { ScreenWidget } from './types/screen-widget.types';
 import { ScreenType } from './types/screen.types';
 import { WidgetService } from '../widget/widget.service'; // New import
 
@@ -16,8 +15,6 @@ export class ScreenService {
 
   async create(createScreenDto: CreateScreenDto): Promise<Screen> {
     try {
-      this.validateScreenWidgets(createScreenDto.widgets);
-      
       const existingScreen = await this.screenModel.findOne({
         route: createScreenDto.route,
         appId: new Types.ObjectId(createScreenDto.appId)
@@ -38,6 +35,9 @@ export class ScreenService {
       const screen = new this.screenModel({
         ...createScreenDto,
         appId: new Types.ObjectId(createScreenDto.appId),
+        // ✅ Fix: Ensure widgetScreenId is saved
+        widgetScreenId: createScreenDto.widgetScreenId || null,
+
         settings: {
           backgroundColor: '#ffffff',
           padding: 16,
@@ -71,41 +71,13 @@ export class ScreenService {
     }
   }
 
-  // Updated: Require widgets to be assigned by id only.
-  private validateScreenWidgets(widgets: ScreenWidget[]) {
-    if (!Array.isArray(widgets)) {
-      throw new BadRequestException('Screen widgets must be an array');
-    }
-
-    widgets.forEach(widget => {
-      if (!widget.type || !widget.id) {
-        throw new BadRequestException('Each widget must have a type and an id');
-      }
-    });
-  }
-
-  // Updated: Populate widgets using the widget service and assign id from _id if not present.
-  private async populateWidgets(screen: Screen): Promise<Screen> {
-    screen.widgets = await Promise.all(
-      screen.widgets.map(async (widget: ScreenWidget) => {
-        const foundWidget = await this.widgetService.findOne(widget.id);
-        if (!foundWidget.id) {
-          foundWidget.id = foundWidget._id.toString();
-        }
-        return foundWidget as ScreenWidget;
-      })
-    );
-    return screen;
-  }
-
   async findById(id: string): Promise<Screen> {
     try {
       const screen = await this.screenModel.findById(new Types.ObjectId(id)).exec();
       if (!screen) {
         throw new NotFoundException(`Screen with ID ${id} not found`);
       }
-      const populatedScreen = await this.populateWidgets(screen);
-      return populatedScreen;
+      return screen;
     } catch (error) {
       if (error instanceof NotFoundException) throw error;
       throw new BadRequestException('Invalid screen ID');
@@ -143,10 +115,6 @@ export class ScreenService {
 
   async update(id: string, updateScreenDto: UpdateScreenDto): Promise<Screen> {
     try {
-      if (updateScreenDto.widgets) {
-        this.validateScreenWidgets(updateScreenDto.widgets);
-      }
-
       // If updating route, check for uniqueness
       if (updateScreenDto.route && updateScreenDto.appId) {
         const existingScreen = await this.screenModel.findOne({
@@ -164,6 +132,11 @@ export class ScreenService {
       const updateData: any = { ...updateScreenDto };
       if (updateScreenDto.appId) {
         updateData.appId = new Types.ObjectId(updateScreenDto.appId);
+      }
+
+      // ✅ Fix: If widgetScreenId was provided, ensure it's updated
+      if (updateScreenDto.widgetScreenId) {
+        updateData.widgetScreenId = updateScreenDto.widgetScreenId;
       }
 
       const updatedScreen = await this.screenModel
@@ -234,18 +207,6 @@ export class ScreenService {
     }
   }
 
-  async updateWidgets(id: string, widgets: ScreenWidget[]): Promise<Screen> {
-    try {
-      this.validateScreenWidgets(widgets);
-      const screen = await this.findById(id);
-      screen.widgets = widgets;
-      return await screen.save();
-    } catch (error) {
-      if (error instanceof NotFoundException) throw error;
-      throw new BadRequestException('Failed to update screen widgets');
-    }
-  }
-
   async delete(id: string): Promise<void> {
     try {
       const screen = await this.findById(id);
@@ -291,7 +252,6 @@ export class ScreenService {
         route,
         appId,
         screenType,
-        widgets: [],
         settings: {
           backgroundColor: '#ffffff',
           padding: 16,
@@ -348,7 +308,8 @@ export class ScreenService {
   }
 
   private getScreenNameFromRoute(route: string): string {
-    const name = route.substring(1) // Remove leading slash
+    const name = route
+      .substring(1) // Remove leading slash
       .split('-')
       .map(word => word.charAt(0).toUpperCase() + word.slice(1))
       .join(' ');
@@ -383,19 +344,20 @@ export class ScreenService {
 
     try {
       const createdScreens = await Promise.all(
-        defaultScreens.map((screen, index) => this.create({
-          ...screen,
-          appId,
-          widgets: [],
-          settings: {
-            backgroundColor: '#ffffff',
-            padding: 16,
-            layoutType: 'flex'
-          },
-          metadata: {
-            order: index
-          }
-        }))
+        defaultScreens.map((screen, index) =>
+          this.create({
+            ...screen,
+            appId,
+            settings: {
+              backgroundColor: '#ffffff',
+              padding: 16,
+              layoutType: 'flex'
+            },
+            metadata: {
+              order: index
+            }
+          })
+        )
       );
 
       return createdScreens;
@@ -407,7 +369,7 @@ export class ScreenService {
   async duplicateScreen(id: string, newRoute: string): Promise<Screen> {
     try {
       const sourceScreen = await this.findById(id);
-      const { widgets, settings, screenType, description, tags, metadata } = sourceScreen;
+      const { settings, screenType, description, tags, metadata } = sourceScreen;
 
       const newMetadata = {
         ...metadata,
@@ -423,7 +385,6 @@ export class ScreenService {
         route: newRoute,
         appId: sourceScreen.appId.toString(),
         screenType,
-        widgets,
         settings,
         description,
         tags: [...tags, 'duplicated'],

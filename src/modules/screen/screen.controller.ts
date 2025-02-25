@@ -72,15 +72,6 @@ export class ScreenController {
     return this.screenService.updateOrder(id, updateOrderDto.order);
   }
 
-  @Put(':id/widgets')
-  @HttpCode(HttpStatus.OK)
-  async updateWidgets(
-    @Param('id') id: string,
-    @Body() widgets: ScreenWidget[]
-  ) {
-    return this.screenService.updateWidgets(id, widgets);
-  }
-
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   async remove(@Param('id') id: string) {

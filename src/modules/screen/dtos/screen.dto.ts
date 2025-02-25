@@ -1,8 +1,20 @@
-import { IsString, IsNotEmpty, IsObject, IsOptional, IsBoolean, IsArray, ValidateNested, IsEnum, IsNumber } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsObject,
+  IsOptional,
+  IsBoolean,
+  IsArray,
+  ValidateNested,
+  IsEnum,
+  IsNumber,
+} from 'class-validator';
 import { Type } from 'class-transformer';
-import { ScreenWidget } from '../types/screen-widget.types';
 import { ScreenType } from '../types/screen.types';
 
+/**
+ * Screen Settings DTO
+ */
 export class ScreenSettingsDto {
   @IsString()
   @IsOptional()
@@ -21,6 +33,9 @@ export class ScreenSettingsDto {
   customSettings?: Record<string, any>;
 }
 
+/**
+ * Screen Metadata DTO
+ */
 export class ScreenMetadataDto {
   @IsNumber()
   @IsOptional()
@@ -83,6 +98,9 @@ export class ScreenMetadataDto {
   additionalMetadata?: Record<string, any>;
 }
 
+/**
+ * CreateScreen DTO
+ */
 export class CreateScreenDto {
   @IsString()
   @IsNotEmpty()
@@ -97,14 +115,9 @@ export class CreateScreenDto {
   appId: string;
 
   @IsEnum(ScreenType, {
-    message: 'screenType must be one of the valid screen types'
+    message: 'screenType must be one of the valid screen types',
   })
   screenType: ScreenType;
-
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => Object)
-  widgets: ScreenWidget[];
 
   @ValidateNested()
   @Type(() => ScreenSettingsDto)
@@ -128,8 +141,16 @@ export class CreateScreenDto {
   @Type(() => ScreenMetadataDto)
   @IsOptional()
   metadata?: ScreenMetadataDto;
+
+  // ✅ New Field: widgetScreenId
+  @IsString()
+  @IsOptional()
+  widgetScreenId?: string;
 }
 
+/**
+ * UpdateScreen DTO
+ */
 export class UpdateScreenDto {
   @IsString()
   @IsOptional()
@@ -144,16 +165,10 @@ export class UpdateScreenDto {
   appId?: string;
 
   @IsEnum(ScreenType, {
-    message: 'screenType must be one of the valid screen types'
+    message: 'screenType must be one of the valid screen types',
   })
   @IsOptional()
   screenType?: ScreenType;
-
-  @IsArray()
-  @IsOptional()
-  @ValidateNested({ each: true })
-  @Type(() => Object)
-  widgets?: ScreenWidget[];
 
   @ValidateNested()
   @Type(() => ScreenSettingsDto)
@@ -177,8 +192,16 @@ export class UpdateScreenDto {
   @Type(() => ScreenMetadataDto)
   @IsOptional()
   metadata?: ScreenMetadataDto;
+
+  // ✅ New Field: widgetScreenId
+  @IsString()
+  @IsOptional()
+  widgetScreenId?: string;
 }
 
+/**
+ * UpdateScreenOrder DTO
+ */
 export class UpdateScreenOrderDto {
   @IsNumber()
   @IsNotEmpty()

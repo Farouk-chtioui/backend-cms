@@ -1,6 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
-import { ScreenWidget } from './types/screen-widget.types';
 import { ScreenType } from './types/screen.types';
 
 export interface ScreenSettings {
@@ -45,8 +44,8 @@ export class Screen extends Document {
   })
   screenType: ScreenType;
 
-  @Prop({ type: [Object], default: [] })
-  widgets: ScreenWidget[];
+  @Prop({ type: Types.ObjectId, ref: 'WidgetScreen', default: null }) // ✅ Added widgetScreenId
+  widgetScreenId?: Types.ObjectId;
 
   @Prop({
     type: {
