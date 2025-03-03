@@ -95,4 +95,10 @@ export class ScreenController {
     }
     return this.screenService.duplicateScreen(id, newRoute);
   }
+ // later this will have to be used to because it has the populated widgets but first fix base64 not to be in request 
+  @Get(':id/widgets')
+  @HttpCode(HttpStatus.OK)
+  async getScreenWithWidgets(@Param('id') id: string) {
+    return this.screenService.getScreenWithWidgets(id);
+  }
 }

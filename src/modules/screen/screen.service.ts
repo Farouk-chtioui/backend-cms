@@ -396,4 +396,22 @@ export class ScreenService {
       throw new BadRequestException('Failed to duplicate screen');
     }
   }
+
+  async getScreenWithWidgets(screenId: string) {
+    const screen = await this.screenModel
+      .findById(screenId)
+      .populate({
+        path: 'widgetScreenId',
+        populate: {
+          path: 'widgets', // Populate widgets from WidgetScreen
+        },
+      })
+      .exec();
+
+    if (!screen) {
+      throw new NotFoundException(`Screen with ID ${screenId} not found`);
+    }
+
+    return screen;
+  }
 }
