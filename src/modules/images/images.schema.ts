@@ -3,7 +3,7 @@ import { Document, Schema as MongooseSchema } from 'mongoose';
 
 export type ImageDocument = Image & Document;
 
-@Schema({ 
+@Schema({
   timestamps: true,
   toJSON: {
     transform: (doc, ret) => {
@@ -19,7 +19,10 @@ export class Image {
   name: string;
 
   @Prop({ required: true })
-  base64: string;
+  url: string; // 🔥 Store ImageKit URL
+
+  @Prop({ required: true })
+  fileId: string; // 🔥 Store ImageKit fileId for deletion
 
   @Prop({ required: true, type: MongooseSchema.Types.ObjectId, ref: 'App' })
   appId: MongooseSchema.Types.ObjectId;

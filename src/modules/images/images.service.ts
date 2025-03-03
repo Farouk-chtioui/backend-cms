@@ -4,6 +4,11 @@ import { Model, isValidObjectId } from 'mongoose';
 import { Image, ImageDocument } from './images.schema';
 import { CreateImageDto } from './create-image.dto';
 import { Types } from 'mongoose';
+import axios from 'axios';
+import * as FormData from 'form-data';
+import * as dotenv from 'dotenv';
+
+dotenv.config();
 
 @Injectable()
 export class ImagesService {
@@ -22,42 +27,47 @@ export class ImagesService {
         throw new BadRequestException('Invalid file type. Only JPG, PNG, and GIF files are allowed.');
       }
 
-      // Different size limits for GIFs vs other images
-      if (file.mimetype === 'image/gif') {
-        const maxGifSize = 30 * 1024 * 1024; // 30MB for GIFs
-        if (file.size > maxGifSize) {
-          throw new BadRequestException('GIF size must be less than 30MB');
-        }
-      } else {
-        const maxSize = 20 * 1024 * 1024; // 20MB for other images
-        if (file.size > maxSize) {
-          throw new BadRequestException('Image size must be less than 20MB');
-        }
-      }
-
-      // Validate appId format
       if (!isValidObjectId(createImageDto.appId)) {
         throw new BadRequestException('Invalid app ID format');
       }
 
-      // Convert the buffer to base64
-      const base64 = file.buffer.toString('base64');
-      
+      // 🔥 Encode ImageKit Private Key for Authorization
+      const encodedAuth = Buffer.from(`${process.env.IMAGEKIT_PRIVATE_KEY}:`).toString('base64');
+
+      // Prepare FormData for ImageKit
+      const formData = new FormData();
+      formData.append('file', file.buffer, { filename: file.originalname }); // Send as Buffer
+      formData.append('fileName', file.originalname);
+      formData.append('folder', process.env.IMAGEKIT_FOLDER_PATH || '/');
+
+      // Upload to ImageKit
+      const response = await axios.post(process.env.IMAGEKIT_UPLOAD_URL!, formData, {
+        headers: {
+          ...formData.getHeaders(),
+          Authorization: `Basic ${encodedAuth}`, // 🔥 Fix missing authentication
+        },
+      });
+
+      if (!response.data || !response.data.fileId || !response.data.url) {
+        throw new BadRequestException('Failed to upload image to ImageKit');
+      }
+
+      // 🔥 Get public URL & fileId from ImageKit response
+      const fileUrl = response.data.url;
+      const fileId = response.data.fileId; // Store the correct file ID
+
       const image = new this.imageModel({
         name: createImageDto.name,
-        base64: `data:${file.mimetype};base64,${base64}`,
+        url: fileUrl, // 🔥 Store ImageKit URL
+        fileId: fileId, // 🔥 Store ImageKit File ID for deletion
         appId: new Types.ObjectId(createImageDto.appId),
         mimeType: file.mimetype,
         size: file.size,
       });
 
-      const savedImage = await image.save();
-      return savedImage.toJSON();
+      return (await image.save()).toJSON();
     } catch (error) {
-      if (error instanceof BadRequestException) {
-        throw error;
-      }
-      console.error('Error uploading image:', error);
+      console.error('Error uploading image:', error.response?.data || error.message);
       throw new BadRequestException('Failed to upload image');
     }
   }
@@ -75,9 +85,6 @@ export class ImagesService {
       
       return images.map(image => image.toJSON());
     } catch (error) {
-      if (error instanceof BadRequestException) {
-        throw error;
-      }
       console.error('Error finding images:', error);
       throw new BadRequestException('Failed to fetch images');
     }
@@ -95,11 +102,8 @@ export class ImagesService {
         throw new NotFoundException(`Image with ID ${id} not found`);
       }
 
-      return image.toJSON();
+      return image.toObject(); // 🔥 Ensure it is returned as an object
     } catch (error) {
-      if (error instanceof BadRequestException || error instanceof NotFoundException) {
-        throw error;
-      }
       console.error('Error finding image:', error);
       throw new BadRequestException('Failed to fetch image');
     }
@@ -108,26 +112,37 @@ export class ImagesService {
   async remove(id: string): Promise<boolean> {
     try {
       console.log('Attempting to delete image with ID:', id);
-      
+  
       if (!isValidObjectId(id)) {
         throw new BadRequestException(`Invalid image ID format: ${id}`);
       }
-
-      const result = await this.imageModel
-        .findByIdAndDelete(new Types.ObjectId(id))
-        .exec();
-      
-      if (!result) {
+  
+      const image = await this.imageModel.findById(id);
+      if (!image) {
         throw new NotFoundException(`Image with ID ${id} not found`);
       }
-      
+  
+      const imageData = image.toObject(); // Convert document to plain object
+  
+      if (!imageData.fileId) {
+        throw new BadRequestException('Image fileId not found');
+      }
+  
+      // 🔥 Use correct ImageKit fileId
+      const fileId = imageData.fileId;
+  
+      // 🔥 Delete from ImageKit using fileId
+      await axios.delete(`https://api.imagekit.io/v1/files/${fileId}`, {
+        headers: {
+          Authorization: `Basic ${Buffer.from(process.env.IMAGEKIT_PRIVATE_KEY + ':').toString('base64')}`,
+        },
+      });
+  
+      await this.imageModel.findByIdAndDelete(id);
       console.log('Successfully deleted image with ID:', id);
       return true;
     } catch (error) {
-      console.error('Error in remove method:', error);
-      if (error instanceof BadRequestException || error instanceof NotFoundException) {
-        throw error;
-      }
+      console.error('Error deleting image:', error.response?.data || error.message);
       throw new BadRequestException('Failed to delete image');
     }
   }

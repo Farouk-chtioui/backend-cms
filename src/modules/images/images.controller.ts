@@ -12,6 +12,7 @@ import {
   ParseFilePipe,
   MaxFileSizeValidator,
   FileTypeValidator,
+  BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ImagesService } from './images.service';
@@ -158,30 +159,12 @@ export class ImagesController {
 
   @Delete(':id')
   async remove(@Param('id') id: string) {
-    try {
-      console.log('Delete request received for image ID:', id);
-      await this.imagesService.remove(id);
-      return { message: 'Image deleted successfully' };
-    } catch (error) {
-      console.error('Delete error:', error);
-      
-      if (error instanceof HttpException) {
-        throw error;
-      }
-
-      const status = 
-        error.message?.includes('not found') ? HttpStatus.NOT_FOUND :
-        error.message?.includes('Invalid') ? HttpStatus.BAD_REQUEST :
-        HttpStatus.INTERNAL_SERVER_ERROR;
-
-      throw new HttpException(
-        {
-          status,
-          error: status === HttpStatus.NOT_FOUND ? 'Image not found' : 'Failed to delete image',
-          message: error instanceof Error ? error.message : 'Failed to delete image',
-        },
-        status,
-      );
+    if (!id) {
+      console.error('Delete request received with missing ID');
+      throw new BadRequestException('Image ID is required');
     }
+
+    console.log(`Delete request received for image ID: ${id}`);
+    return this.imagesService.remove(id);
   }
 }
