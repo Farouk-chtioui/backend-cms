@@ -19,7 +19,7 @@ export async function seedAdminUser(app: INestApplication) {
   } catch (error) {
     // Not found, create admin account
     try {
-      const newAdmin = await usersService.create(adminEmail, 'admin', adminPassword);
+      const newAdmin = await usersService.create(adminEmail, 'admin', adminPassword,'admin');
       logger.log(`Admin account created with ID: ${newAdmin._id}`);
     } catch (creationError) {
       logger.error('Error creating admin account', creationError);

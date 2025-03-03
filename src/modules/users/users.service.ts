@@ -4,23 +4,22 @@ import { Model, Types } from 'mongoose';
 import { User } from './user.schema';
 import * as bcrypt from 'bcrypt';
 import { RepositoriesService } from '../repositories/repositories.service';
-import * as fs from 'fs';
-import * as path from 'path';
+
+// ✅ ImageKit dependencies
+import axios from 'axios';
+import * as FormData from 'form-data';
+import * as dotenv from 'dotenv';
+
+dotenv.config();
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectModel(User.name) private userModel: Model<User>,
     private repositoriesService: RepositoriesService,
-  ) {
-    // Ensure uploads directory exists
-    const uploadsDir = path.join(process.cwd(), 'uploads', 'profile-images');
-    if (!fs.existsSync(uploadsDir)) {
-      fs.mkdirSync(uploadsDir, { recursive: true });
-    }
-  }
+  ) {}
 
-  // New method to get all users
+  // ----- findAll -----
   async findAll(excludeFields: string[] = ['password']): Promise<User[]> {
     try {
       const projection = excludeFields.reduce((acc, field) => {
@@ -28,26 +27,29 @@ export class UsersService {
         return acc;
       }, {});
 
-      return await this.userModel
+      return this.userModel
         .find({}, projection)
-        .sort({ username: 1 }) // Sort by username alphabetically
+        .sort({ username: 1 })
         .exec();
     } catch (error) {
       throw new BadRequestException('Failed to fetch users');
     }
   }
 
-  // New method to search users
+  // ----- searchUsers -----
   async searchUsers(searchTerm: string): Promise<User[]> {
     try {
       const regex = new RegExp(searchTerm, 'i');
-      return await this.userModel
-        .find({
-          $or: [
-            { username: { $regex: regex } },
-            { email: { $regex: regex } }
-          ]
-        }, { password: 0 })
+      return this.userModel
+        .find(
+          {
+            $or: [
+              { username: { $regex: regex } },
+              { email: { $regex: regex } },
+            ],
+          },
+          { password: 0 },
+        )
         .limit(10)
         .exec();
     } catch (error) {
@@ -55,46 +57,57 @@ export class UsersService {
     }
   }
 
-  async create(email: string, username: string, password: string, profileImage?: string): Promise<User> {
-    const existingUser = await this.userModel.findOne({ 
-      $or: [{ email }, { username }] 
-    }).exec();
-    
+  // ----- create -----
+  async create(
+    email: string,
+    username: string,
+    password: string,
+    role:string,
+    profileImage?: string,
+  ): Promise<User> {
+    const existingUser = await this.userModel.findOne({
+      $or: [{ email }, { username }],
+    });
+
     if (existingUser) {
       throw new BadRequestException('User with email or username already exists');
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const newUser = new this.userModel({ 
-      email, 
-      username, 
-      password: hashedPassword, 
-      profileImage,
+    const newUser = new this.userModel({
+      email,
+      username,
+      password: hashedPassword,
+      profileImage: profileImage || null,
       joinDate: new Date(),
-      lastActive: new Date()
+      lastActive: new Date(),
     });
+
     await newUser.save();
 
+    // Create a default repository
     const newRepository = await this.repositoriesService.create({
       repositoryName: 'my_project',
       ownerId: newUser._id.toString(),
       isPrivate: false,
     });
 
+    // Link the repository to the user
     newUser.repositoryIds = [this.ensureObjectId(newRepository._id)];
     await newUser.save();
 
     return newUser;
   }
 
+  // Utility for validating ObjectIds
   private ensureObjectId(id: any): Types.ObjectId {
     if (Types.ObjectId.isValid(id)) {
       return new Types.ObjectId(id);
-    } else {
-      throw new BadRequestException('Invalid ObjectId');
     }
+    throw new BadRequestException('Invalid ObjectId');
   }
 
+  // ----- findOneByEmail -----
   async findOneByEmail(email: string): Promise<User> {
     try {
       const user = await this.userModel.findOne({ email }).exec();
@@ -110,6 +123,7 @@ export class UsersService {
     }
   }
 
+  // ----- findOneById -----
   async findOneById(userId: string): Promise<User> {
     try {
       const userObjectId = this.ensureObjectId(userId);
@@ -126,6 +140,7 @@ export class UsersService {
     }
   }
 
+  // ----- findById -----
   async findById(id: string): Promise<User> {
     try {
       const userObjectId = this.ensureObjectId(id);
@@ -142,23 +157,24 @@ export class UsersService {
     }
   }
 
+  // ----- updateUser -----
   async updateUser(userId: string, updateData: Partial<User>): Promise<User> {
     try {
       const userObjectId = this.ensureObjectId(userId);
       const user = await this.userModel.findById(userObjectId);
-      
+
       if (!user) {
         throw new NotFoundException('User not found');
       }
 
-      // Check if email or username is being changed and ensure they're unique
+      // Check for unique email/username
       if (updateData.email || updateData.username) {
         const existingUser = await this.userModel.findOne({
           _id: { $ne: userObjectId },
           $or: [
             { email: updateData.email || '' },
-            { username: updateData.username || '' }
-          ]
+            { username: updateData.username || '' },
+          ],
         });
 
         if (existingUser) {
@@ -166,13 +182,13 @@ export class UsersService {
         }
       }
 
-      // Update lastActive timestamp
+      // Update lastActive
       updateData.lastActive = new Date();
 
       const updatedUser = await this.userModel.findByIdAndUpdate(
         userObjectId,
         { $set: updateData },
-        { new: true }
+        { new: true },
       );
 
       if (!updatedUser) {
@@ -188,6 +204,7 @@ export class UsersService {
     }
   }
 
+  // ----- updateProfileImage (ImageKit) -----
   async updateProfileImage(userId: string, file: Express.Multer.File): Promise<string> {
     try {
       const user = await this.findById(userId);
@@ -195,28 +212,46 @@ export class UsersService {
         throw new NotFoundException('User not found');
       }
 
-      // Delete old profile image if it exists
-      if (user.profileImage) {
-        const oldImagePath = path.join(process.cwd(), user.profileImage);
-        if (fs.existsSync(oldImagePath)) {
-          fs.unlinkSync(oldImagePath);
-        }
+      // Convert buffer to base64
+      const base64Image = file.buffer.toString('base64');
+
+      // Create form data
+      const formData = new FormData();
+      formData.append('file', base64Image);
+      formData.append('fileName', `${Date.now()}_${file.originalname}`);
+      formData.append('folder', '/profile-images');
+
+      // Upload to ImageKit
+      const response = await axios({
+        method: 'post',
+        url: process.env.IMAGEKIT_UPLOAD_URL,
+        data: formData,
+        headers: {
+          ...formData.getHeaders(),
+          'Authorization': `Basic ${Buffer.from(
+            process.env.IMAGEKIT_PRIVATE_KEY + ':',
+          ).toString('base64')}`,
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+
+      if (!response.data || !response.data.url) {
+        throw new BadRequestException('Failed to upload image to ImageKit');
       }
 
-      // Update user with new image path
-      const imageUrl = `/uploads/profile-images/${file.filename}`;
+      // Update user profile with new image URL
+      const imageUrl = response.data.url;
       user.profileImage = imageUrl;
       await user.save();
 
       return imageUrl;
     } catch (error) {
-      if (error instanceof NotFoundException) {
-        throw error;
-      }
-      throw new BadRequestException('Failed to update profile image');
+      console.error('Error uploading to ImageKit:', error.response?.data || error.message);
+      throw new BadRequestException('Failed to update profile image: ' + (error.response?.data?.message || error.message));
     }
   }
 
+  // ----- addRepositoryToUser -----
   async addRepositoryToUser(userId: string, repositoryId: string): Promise<User> {
     try {
       const user = await this.findById(userId);
@@ -225,8 +260,7 @@ export class UsersService {
       }
 
       const repositoryObjectId = this.ensureObjectId(repositoryId);
-      
-      // Check if repository is already added
+
       if (user.repositoryIds.includes(repositoryObjectId)) {
         throw new BadRequestException('Repository already added to user');
       }

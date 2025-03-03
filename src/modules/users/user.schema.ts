@@ -1,7 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document, SchemaTypes, Types } from 'mongoose';
+import { Document, Types } from 'mongoose';
 import * as bcrypt from 'bcrypt';
-import { Repository } from '../repositories/repository.schema';
 
 @Schema({ timestamps: true })
 export class User extends Document {
@@ -18,7 +17,7 @@ export class User extends Document {
   username: string;
 
   @Prop({ type: String, default: null })
-  profileImage: string;
+  profileImage: string; // ✅ We'll store the ImageKit URL here
 
   @Prop({ type: String, default: null })
   bio: string;

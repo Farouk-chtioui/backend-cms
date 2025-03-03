@@ -13,7 +13,6 @@ import {
   FileTypeValidator
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
 import { UsersService } from './users.service';
 import { User } from './user.schema';
 import * as bcrypt from 'bcrypt';
@@ -112,32 +111,23 @@ export class UsersController {
     }
   }
 
-  @Post(':userId/profile-image')
-  @UseInterceptors(FileInterceptor('profileImage', {
-    storage: diskStorage({
-      destination: './uploads/profile-images',
-      filename: (req, file, cb) => {
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        cb(null, uniqueSuffix + path.extname(file.originalname));
-      },
-    }),
+  @Post(':id/profile-image')
+  @UseInterceptors(FileInterceptor('file', {
+    storage: undefined // This ensures memory storage is used
   }))
   async updateProfileImage(
-    @Param('userId') userId: string,
+    @Param('id') userId: string,
     @UploadedFile(
       new ParseFilePipe({
         validators: [
-          new MaxFileSizeValidator({ maxSize: 1024 * 1024 * 2 }), // 2MB
+          new MaxFileSizeValidator({ maxSize: 5 * 1024 * 1024 }), // 5MB max
           new FileTypeValidator({ fileType: /(jpg|jpeg|png)$/ }),
         ],
       }),
-    ) file: Express.Multer.File,
+    )
+    file: Express.Multer.File,
   ) {
-    try {
-      const imageUrl = await this.usersService.updateProfileImage(userId, file);
-      return { profileImage: imageUrl };
-    } catch (error) {
-      throw new BadRequestException(error.message);
-    }
+    const imageUrl = await this.usersService.updateProfileImage(userId, file);
+    return { url: imageUrl }; // Return as JSON object
   }
 }
