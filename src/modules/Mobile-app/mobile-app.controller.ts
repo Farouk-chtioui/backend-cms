@@ -84,13 +84,15 @@ export class MobileAppController {
     return this.mobileAppService.findMobileAppByRepositoryId(repositoryId);
   }
 
-  @Post('generate')
-  async generateAppWithTheme(@Body() createMobileAppDto: CreateMobileAppDto) {
-    return this.mobileAppService.generateAppWithTheme(createMobileAppDto);
-  }
+ 
 
   @Get(':appId/config')
   async getAppConfig(@Param('appId') appId: string) {
     return await this.mobileAppService.getAppConfiguration(appId);
+  }
+
+  @Get(':mobileId/full')
+  async getFullMobileAppData(@Param('mobileId') mobileId: string) {
+    return this.mobileAppService.getFullMobileAppData(mobileId);
   }
 }

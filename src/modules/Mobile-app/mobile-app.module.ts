@@ -7,6 +7,8 @@ import { AppDesignModule } from '../appDesign/appDesign.module';
 import { AppLayoutModule } from '../appLayout/appLayout.module'; // Import AppLayoutModule
 import { AppGenerationModule } from '../app-generation/app-generation.module';
 import { AppLayoutSchema } from '../appLayout/appLayout.schema';
+import { ScreenModule } from '../screen/screen.module'; // New import
+import { OnboardingScreensModule } from '../onboarding-screens/onboardingscreens.module';
 
 @Module({
   imports: [
@@ -15,6 +17,8 @@ import { AppLayoutSchema } from '../appLayout/appLayout.schema';
     forwardRef(() => AppDesignModule), // Resolve circular dependencies with AppDesignModule
     forwardRef(() => AppLayoutModule), // Import AppLayoutModule for AppLayout model
     AppGenerationModule, // AppGenerationModule for app generation services
+    ScreenModule,  // Add ScreenModule to access ScreenService
+    OnboardingScreensModule, // Add OnboardingScreensModule to access OnboardingScreensService
   ],
   controllers: [MobileAppController],
   providers: [MobileAppService],

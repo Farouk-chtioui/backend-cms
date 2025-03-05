@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Screen } from './screen.schema';
@@ -8,6 +8,8 @@ import { WidgetService } from '../widget/widget.service'; // New import
 
 @Injectable()
 export class ScreenService {
+  private readonly logger = new Logger(ScreenService.name);
+
   constructor(
     @InjectModel(Screen.name) private screenModel: Model<Screen>,
     private readonly widgetService: WidgetService // New dependency
@@ -90,12 +92,27 @@ export class ScreenService {
 
   async findByAppId(appId: string): Promise<Screen[]> {
     try {
-      return await this.screenModel
+      this.logger.debug(`Finding screens for appId: ${appId}`);
+      
+      const screens = await this.screenModel
         .find({ appId: new Types.ObjectId(appId) })
         .sort({ 'metadata.order': 1 })
+        .populate({
+          path: 'widgetScreenId',
+          populate: {
+            path: 'widgets',
+            populate: {
+              path: 'content'  // Populate the content of each widget
+            }
+          }
+        })
         .exec();
+      
+      this.logger.debug(`Found ${screens.length} screens with populated widgets for appId ${appId}`);
+      return screens;
     } catch (error) {
-      throw new BadRequestException('Invalid app ID');
+      this.logger.error(`Error finding screens by appId: ${error.message}`);
+      throw new BadRequestException('Invalid app ID or error finding screens');
     }
   }
 
@@ -397,21 +414,29 @@ export class ScreenService {
     }
   }
 
-  async getScreenWithWidgets(screenId: string) {
-    const screen = await this.screenModel
-      .findById(screenId)
-      .populate({
-        path: 'widgetScreenId',
-        populate: {
-          path: 'widgets', // Populate widgets from WidgetScreen
-        },
-      })
-      .exec();
+  async getScreenWithWidgets(screenId: string): Promise<Screen> {
+    try {
+      const screen = await this.screenModel
+        .findById(screenId)
+        .populate({
+          path: 'widgetScreenId',
+          populate: {
+            path: 'widgets',
+            populate: {
+              path: 'content'  // Populate the content of each widget
+            }
+          }
+        })
+        .exec();
 
-    if (!screen) {
-      throw new NotFoundException(`Screen with ID ${screenId} not found`);
+      if (!screen) {
+        throw new NotFoundException(`Screen with ID ${screenId} not found`);
+      }
+
+      return screen;
+    } catch (error) {
+      this.logger.error(`Error getting screen with widgets: ${error.message}`);
+      throw new BadRequestException('Failed to get screen with widgets');
     }
-
-    return screen;
   }
 }

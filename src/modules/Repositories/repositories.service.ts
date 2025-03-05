@@ -1,4 +1,4 @@
-import { Injectable, forwardRef, Inject, BadRequestException } from '@nestjs/common';
+import { Injectable, forwardRef, Inject } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Repository } from './repository.schema';
@@ -7,8 +7,6 @@ import { MobileAppService } from '../mobile-app/mobile-app.service';
 import { AppDesignService } from '../appDesign/appDesign.service';
 import { AppLayoutService } from '../appLayout/appLayout.service';
 import { UsersService } from '../users/users.service';
-import * as FormData from 'form-data';
-import axios from 'axios';
 
 @Injectable()
 export class RepositoriesService {
@@ -20,60 +18,6 @@ export class RepositoriesService {
     @Inject(forwardRef(() => UsersService))
     private readonly usersService: UsersService,
   ) {}
-
-  private async uploadImageToImageKit(file: Express.Multer.File, folder: string): Promise<string> {
-    try {
-      // Convert buffer to base64
-      const base64Image = file.buffer.toString('base64');
-
-      // Create form data
-      const formData = new FormData();
-      formData.append('file', base64Image);
-      formData.append('fileName', `${Date.now()}_${file.originalname}`);
-      formData.append('folder', folder);
-
-      // Upload to ImageKit
-      const response = await axios({
-        method: 'post',
-        url: process.env.IMAGEKIT_UPLOAD_URL,
-        data: formData,
-        headers: {
-          ...formData.getHeaders(),
-          'Authorization': `Basic ${Buffer.from(
-            process.env.IMAGEKIT_PRIVATE_KEY + ':',
-          ).toString('base64')}`,
-          'Content-Type': 'multipart/form-data',
-        },
-      });
-
-      if (!response.data || !response.data.url) {
-        throw new BadRequestException('Failed to upload image to ImageKit');
-      }
-
-      return response.data.url;
-    } catch (error) {
-      console.error('Error uploading to ImageKit:', error.response?.data || error.message);
-      throw new BadRequestException('Failed to upload image: ' + (error.response?.data?.message || error.message));
-    }
-  }
-
-  async updateRepositoryImage(id: string, file: Express.Multer.File, imageType: 'image' | 'coverImage'): Promise<Repository> {
-    const repository = await this.findById(id);
-    if (!repository) {
-      throw new BadRequestException('Repository not found');
-    }
-
-    const imageUrl = await this.uploadImageToImageKit(file, '/repository-images');
-    
-    const updateData = { [imageType]: imageUrl };
-    
-    return this.repositoryModel
-      .findByIdAndUpdate(id, { $set: updateData }, { new: true })
-      .populate('mobileAppId')
-      .populate('ownerId')
-      .populate('team')
-      .exec();
-  }
 
   async create(createRepositoryDto: CreateRepositoryDto): Promise<Repository> {
     const { ownerId, repositoryName, description, isPrivate, image, coverImage, team } = createRepositoryDto;
@@ -128,10 +72,6 @@ export class RepositoriesService {
       .populate('ownerId')
       .populate('team')
       .exec();
-  }
-
-  async delete(id: string): Promise<Repository> {
-    return this.repositoryModel.findByIdAndDelete(id).exec();
   }
 
   async findByUserAccess(userId: string): Promise<Repository[]> {

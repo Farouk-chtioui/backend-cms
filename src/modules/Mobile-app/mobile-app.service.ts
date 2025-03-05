@@ -10,7 +10,8 @@ import { AppLayoutService } from '../appLayout/appLayout.service';
 import { UpdateAppLayoutDto } from '../appLayout/dtos/appLayout.dto';
 import { AppDesignService } from '../appDesign/appDesign.service';
 import { BadRequestException } from '@nestjs/common';
-
+import { ScreenService } from '../screen/screen.service';
+import { OnboardingScreensService } from '../onboarding-screens/service/onboarding-screens.service';
 
 @Injectable()
 export class MobileAppService {
@@ -19,10 +20,12 @@ export class MobileAppService {
   constructor(
     @InjectModel(MobileApp.name) private mobileAppModel: Model<MobileApp>,
     @InjectModel(AppDesign.name) private appDesignModel: Model<AppDesign>,
-    @InjectModel('AppLayout') private appLayoutModel: Model<AppLayout>, // Inject the AppLayout schema correctly
+    @InjectModel('AppLayout') private appLayoutModel: Model<AppLayout>,
     private readonly appGenerationService: AppGenerationService,
-    private readonly appLayoutService: AppLayoutService, // Inject the AppLayoutService
-    private readonly appDesignService: AppDesignService, // Inject the AppDesignService
+    private readonly appLayoutService: AppLayoutService,
+    private readonly appDesignService: AppDesignService,
+    private readonly screenService: ScreenService,
+    private readonly onboardingScreensService: OnboardingScreensService
   ) {}
 
   // Method to create a Mobile App, linking it to AppDesign and AppLayout
@@ -208,7 +211,6 @@ async create(createMobileAppDto: CreateMobileAppDto): Promise<MobileApp> {
     await defaultLayout.save();
     return defaultLayout;
   }
-  
   
   
 
@@ -415,82 +417,69 @@ async create(createMobileAppDto: CreateMobileAppDto): Promise<MobileApp> {
   }
 
   // Generate a Mobile App with the provided theme and return download URL
-  async generateAppWithTheme(createMobileAppDto: CreateMobileAppDto): Promise<any> {
-    const { appName, appDesignId, appLayoutId, repositoryId, ownerId, userEmail } = createMobileAppDto;
   
-    // Log the received appDesignId to ensure it's being passed correctly
-    this.logger.debug(`Received appDesignId: ${appDesignId}`);
-  
-    let appDesign;
-  
-    // Ensure appDesignId is handled as an ObjectId (if using MongoDB)
-    if (appDesignId) {
-      this.logger.debug(`Attempting to fetch app design with id: ${appDesignId}`);
-  
-      try {
-        // Ensure appDesignId is properly cast as an ObjectId if necessary
-        appDesign = await this.appDesignModel.findById(appDesignId).exec();
-  
-        if (!appDesign) {
-          this.logger.warn(`Custom app design with id ${appDesignId} not found. Using default design.`);
-          appDesign = await this.createDefaultAppDesign();  // Fallback to default if the custom design is not found
-        } else {
-          this.logger.debug(`Custom app design found: ${JSON.stringify(appDesign)}`);
-        }
-      } catch (error) {
-        this.logger.error(`Error fetching custom app design: ${error.message}`);
-        appDesign = await this.createDefaultAppDesign();
-      }
-    } else {
-      // Fallback to default design if no appDesignId is provided
-      this.logger.warn('No appDesignId provided. Using default app design.');
-      appDesign = await this.createDefaultAppDesign();
-    }
-
-    let appLayout;
-  
-    // Ensure appLayoutId is handled as an ObjectId (if using MongoDB)
-    if (appLayoutId) {
-      this.logger.debug(`Attempting to fetch app layout with id: ${appLayoutId}`);
-  
-      try {
-        // Ensure appLayoutId is properly cast as an ObjectId if necessary
-        appLayout = await this.appLayoutModel.findById(appLayoutId).exec();
-  
-        if (!appLayout) {
-          this.logger.warn(`Custom app layout with id ${appLayoutId} not found. Using default layout.`);
-          appLayout = await this.createDefaultAppLayout();  // Fallback to default if the custom layout is not found
-        } else {
-          this.logger.debug(`Custom app layout found: ${JSON.stringify(appLayout)}`);
-        }
-      } catch (error) {
-        this.logger.error(`Error fetching custom app layout: ${error.message}`);
-        appLayout = await this.createDefaultAppLayout();
-      }
-    } else {
-      // Fallback to default layout if no appLayoutId is provided
-      this.logger.warn('No appLayoutId provided. Using default app layout.');
-      appLayout = await this.createDefaultAppLayout();
-    }
-  
-    // Proceed with app generation
-    const downloadUrl = await this.appGenerationService.generateApp(appName, appDesign, userEmail);
-  
-    // Save the mobile app with the generated app design and layout
-    const newMobileApp = new this.mobileAppModel({
-      appName,
-      appDesignId: appDesign._id,
-      appLayoutId: appLayout._id,
-      repositoryId,
-      ownerId,
-      userEmail,
-    });
-    await newMobileApp.save();
-  
-    return { downloadUrl };
-  }
   async getAppConfiguration(appId: string): Promise<MobileApp> {
     return this.mobileAppModel.findById(appId).populate('appDesignId').populate('appLayoutId').exec();
+  }
+
+  // New: Get full mobile app data including screens
+  async getFullMobileAppData(mobileAppId: string): Promise<any> {
+    try {
+      // Get the mobile app without populating design and layout
+      const mobileApp = await this.mobileAppModel
+        .findById(mobileAppId)
+        .exec();
+
+      if (!mobileApp) {
+        throw new BadRequestException(`Mobile app with ID ${mobileAppId} not found`);
+      }
+
+      // Use mobileAppId instead of repositoryId to find screens
+      this.logger.debug(`Finding screens for mobileAppId: ${mobileAppId}`);
+
+      // Fetch design, layout, and screens in parallel
+      const [appDesign, appLayout, screens, onboardingScreens] = await Promise.all([
+        this.appDesignModel.findById(mobileApp.appDesignId).exec(),
+        this.appLayoutModel.findById(mobileApp.appLayoutId).exec(),
+        this.screenService.findByAppId(mobileAppId), // Changed from repositoryId to mobileAppId
+        this.onboardingScreensService.findAllByAppId(mobileAppId)
+      ]);
+
+      this.logger.debug(`Found ${screens.length} screens and ${onboardingScreens.length} onboarding screens`);
+
+      // Get screens with their widgets populated
+      const screensWithWidgets = await Promise.all(
+        screens.map(async screen => {
+          try {
+            const populatedScreen = await this.screenService.getScreenWithWidgets(screen._id.toString());
+            this.logger.debug(`Successfully populated widgets for screen ${screen._id}`);
+            return populatedScreen;
+          } catch (error) {
+            this.logger.error(`Error populating widgets for screen ${screen._id}: ${error.message}`);
+            return screen;
+          }
+        })
+      );
+
+      // Construct the response without duplication
+      const mobileAppData = {
+        ...mobileApp.toObject(),
+        appDesignId: undefined,
+        appLayoutId: undefined,
+        onboardingScreens // Ensure onboardingScreens is included in the response
+      };
+
+      return {
+        mobileApp: mobileAppData,
+        appDesign,
+        appLayout,
+        screens: screensWithWidgets,
+        onboardingScreens
+      };
+    } catch (error) {
+      this.logger.error(`Error fetching full mobile app data: ${error.message}`);
+      throw new BadRequestException(`Failed to fetch full mobile app data: ${error.message}`);
+    }
   }
 
 }
