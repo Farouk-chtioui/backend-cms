@@ -1,5 +1,3 @@
-// Updated: appLayout.schema.ts
-
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 
@@ -26,10 +24,10 @@ export class AppLayout extends Document {
         routeType: {
           type: String,
           enum: ['screen', 'external'],
-          default: 'screen'
+          default: 'screen',
         },
         route: String,
-        screenId: { type: Types.ObjectId, ref: 'Screen', required: false }
+        screenId: { type: Types.ObjectId, ref: 'Screen', required: false },
       },
     ],
     default: [],
