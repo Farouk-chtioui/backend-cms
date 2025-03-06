@@ -84,8 +84,6 @@ export class MobileAppController {
     return this.mobileAppService.findMobileAppByRepositoryId(repositoryId);
   }
 
- 
-
   @Get(':appId/config')
   async getAppConfig(@Param('appId') appId: string) {
     return await this.mobileAppService.getAppConfiguration(appId);
@@ -94,5 +92,30 @@ export class MobileAppController {
   @Get(':mobileId/full')
   async getFullMobileAppData(@Param('mobileId') mobileId: string) {
     return this.mobileAppService.getFullMobileAppData(mobileId);
+  }
+
+  // ------------------------------------------
+  // NEW ENDPOINT: Generate the mobile app
+  // ------------------------------------------
+  @Post(':id/generate')
+  async generateMobileApp(@Param('id') mobileAppId: string) {
+    try {
+      // 1) Retrieve all data needed to build the Flutter application
+      const fullData = await this.mobileAppService.getFullMobileAppData(mobileAppId);
+
+      // 2) Call a service method that delegates to AppGenerationService
+      const result = await this.mobileAppService.generateMobileApp(fullData);
+
+      return {
+        message: 'App generation complete',
+        data: result,
+      };
+    } catch (error) {
+      this.logger.error(`App generation failed: ${error.message}`);
+      throw new HttpException(
+        `Failed to generate app: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
   }
 }
