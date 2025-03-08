@@ -391,7 +391,7 @@ export class MobileAppService {
     try {
       // The 'fullAppData' argument is the object returned by getFullMobileAppData
       // We pass it directly to the AppGenerationService.
-      const result = await this.appGenerationService.generateFlutterApp(fullAppData);
+      const result = await this.appGenerationService.generateOrUpdateFlutterApp(fullAppData);
       return result;
     } catch (error) {
       this.logger.error(`Failed to generate mobile app: ${error.message}`);

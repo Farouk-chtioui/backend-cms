@@ -7,28 +7,35 @@ import * as path from 'path';
 export class AppGenerationService {
   private readonly logger = new Logger(AppGenerationService.name);
 
-  async generateFlutterApp(fullAppData: any): Promise<any> {
+  async generateOrUpdateFlutterApp(fullAppData: any): Promise<any> {
     try {
-      // 1) Create a unique folder for the build
-      const timestamp = Date.now().toString();
-      const workingDir = path.join('/tmp/flutter_builds', timestamp);
-      fs.mkdirSync(workingDir, { recursive: true });
+      // 1) Get the appId as a string for folder naming
+      const appIdString = fullAppData.mobileApp?._id
+        ? String(fullAppData.mobileApp._id)
+        : 'no_id';
 
-      // 2) Copy your base flutter_template into workingDir
-      const templateDir = path.join(__dirname, '../../../../flutter_template');
-      this.copyFolder(templateDir, workingDir);
+      // We'll store each app's code in a folder named after the appId
+      const workingDir = path.join('../../../tmp/flutter_builds', appIdString);
 
-      // -----------------------------------------------
-      // Generate OTA packs from full app data
-      // -----------------------------------------------
+      // 2) Check if the folder already exists
+      let isNewApp = false;
+      if (!fs.existsSync(workingDir)) {
+        // No folder yet => first time build => copy template
+        isNewApp = true;
+        fs.mkdirSync(workingDir, { recursive: true });
+
+        const templateDir = path.join(__dirname, '../../../../flutter_template');
+        this.copyFolder(templateDir, workingDir);
+      }
+
+      // 3) Generate the OTA packs
       const otaPacks = this.splitIntoOTAPacks(fullAppData);
-      const appName = fullAppData.mobileApp?.name || 'My Generated App';
 
-      // 3) Write these packs as separate JSON files
+      // 4) Write (or overwrite) these packs in the same folder
       const packsDir = path.join(workingDir, 'ota_packs');
       fs.mkdirSync(packsDir, { recursive: true });
 
-      // Write each OTA pack to a JSON file
+      // Overwrite or create JSON files for each pack
       Object.entries(otaPacks).forEach(([packName, packData]) => {
         fs.writeFileSync(
           path.join(packsDir, `${packName}_pack.json`),
@@ -37,23 +44,36 @@ export class AppGenerationService {
         );
       });
 
-      // 4) If you still want to generate "app_config.dart" or "screens_config.dart"
-      // for the static build, you can do so as well.
+      // 5) Optionally update a Dart config file
+      const mobileApp = fullAppData.mobileApp || {};
       const configDir = path.join(workingDir, 'lib', 'config');
       fs.mkdirSync(configDir, { recursive: true });
 
       const appConfigDart = `
         // Auto-generated config file
         class AppConfig {
-          static const String appName = "${appName}";
+          static const String appId = "${mobileApp._id ?? ''}";
+          static const String name = "${mobileApp.name ?? ''}";
+          static const String packageName = "${mobileApp.packageName ?? ''}";
+          static const String version = "${mobileApp.version ?? ''}";
+          static const String environment = "${mobileApp.environment ?? ''}";
+          // Add more fields as needed
         }
       `;
       fs.writeFileSync(path.join(configDir, 'app_config.dart'), appConfigDart, 'utf8');
 
-      // 5) Optionally, run flutter build
-      await this.runCommand('flutter pub get', { cwd: workingDir });
-      await this.runCommand('flutter build apk --release', { cwd: workingDir });
+      // 6) Decide if you want to run flutter commands every time or only on first creation
+      //    If you want a full build for updates as well, keep it as is. Otherwise, skip for updates.
+      //    Example: run on first build only
+      if (isNewApp) {
+        await this.runCommand('flutter pub get', { cwd: workingDir });
+        await this.runCommand('flutter build apk --release', { cwd: workingDir });
+      } else {
+        // Optionally re-run build if needed:
+        // await this.runCommand('flutter build apk --release', { cwd: workingDir });
+      }
 
+      // 7) Where is the APK, if built?
       const apkPath = path.join(
         workingDir,
         'build',
@@ -64,62 +84,53 @@ export class AppGenerationService {
         'app-release.apk'
       );
 
-      // 6) Return info, including where the packs are stored
       return {
         success: true,
-        message: 'Flutter app generated successfully',
-        appName,
-        apkPath,
+        message: isNewApp
+          ? 'Flutter app created successfully'
+          : 'Flutter app updated successfully',
+        appName: mobileApp.name || 'My Generated App',
+        apkPath: fs.existsSync(apkPath) ? apkPath : null,
         otaPacks: Object.fromEntries(
-          Object.keys(otaPacks).map(packName => [
+          Object.keys(otaPacks).map((packName) => [
             packName,
-            path.join(packsDir, `${packName}_pack.json`)
+            path.join(packsDir, `${packName}_pack.json`),
           ])
         ),
       };
     } catch (error) {
-      this.logger.error(`Error generating Flutter app: ${error.message}`);
+      this.logger.error(`Error generating/updating Flutter app: ${error.message}`);
       throw error;
     }
   }
 
-  // Helper method to split fullAppData into separate OTA packs
+  /**
+   * Splits the fullAppData into separate OTA packs
+   */
   private splitIntoOTAPacks(fullAppData: any): Record<string, any> {
     const packs: Record<string, any> = {};
-    
-    // App design pack
-    packs.design = fullAppData.zz || {};
-    
-    // App layout pack
+
+    // For example:
+    packs.design = fullAppData.appDesign || {};
     packs.layout = fullAppData.appLayout || {};
-    
-    // Screens pack
     packs.screens = fullAppData.screens || [];
-    
-    // Onboarding screens pack
     packs.onboarding = fullAppData.onboardingScreens || [];
-    
-    // App config pack (basic app information)
+    // Put entire mobileApp data into config pack
+    const mobileApp = fullAppData.mobileApp || {};
     packs.config = {
-      appName: fullAppData.mobileApp?.name || 'My Generated App',
-      appId: fullAppData.mobileApp?._id || null,
-      packageName: fullAppData.mobileApp?.packageName || 'com.generated.app',
-      version: fullAppData.mobileApp?.version || '1.0.0',
+      ...mobileApp,
+      _id: mobileApp._id ? String(mobileApp._id) : undefined,
     };
-    
-    // Additional packs can be added as needed
-    
+
     return packs;
   }
 
-  // Helper to copy entire folder
   private copyFolder(src: string, dest: string) {
     if (!fs.existsSync(src)) {
       throw new Error(`Source folder does not exist: ${src}`);
     }
-    if (!fs.existsSync(dest)) {
-      fs.mkdirSync(dest, { recursive: true });
-    }
+    fs.mkdirSync(dest, { recursive: true });
+
     const entries = fs.readdirSync(src, { withFileTypes: true });
     for (const entry of entries) {
       const srcPath = path.join(src, entry.name);
@@ -134,7 +145,6 @@ export class AppGenerationService {
     }
   }
 
-  // Helper to run commands
   private runCommand(command: string, options: { cwd: string }): Promise<string> {
     return new Promise((resolve, reject) => {
       exec(command, options, (error, stdout, stderr) => {
