@@ -14,28 +14,29 @@ export class AppGenerationService {
         ? String(fullAppData.mobileApp._id)
         : 'no_id';
 
-      // We'll store each app's code in a folder named after the appId
-      const workingDir = path.join('../../../tmp/flutter_builds', appIdString);
+      // Define working directory and template directory
+      const workingDir = path.join('C:\\Users\\WT\\Desktop\\PFE PROJECT\\flutter_builds', appIdString);
+      const globalTemplateDir = path.join('C:\\Users\\WT\\Desktop\\PFE PROJECT\\flutter_template');
 
-      // 2) Check if the folder already exists
+      // 2) Check if the template exists and if workingDir already exists
       let isNewApp = false;
+      if (!fs.existsSync(globalTemplateDir)) {
+        throw new Error(`Source template folder does not exist: ${globalTemplateDir}`);
+      }
       if (!fs.existsSync(workingDir)) {
-        // No folder yet => first time build => copy template
         isNewApp = true;
         fs.mkdirSync(workingDir, { recursive: true });
-
-        const templateDir = path.join(__dirname, '../../../../flutter_template');
-        this.copyFolder(templateDir, workingDir);
+        // Copy the global template into the working directory.
+        // Non-OTA files will be symlinked to save space.
+        this.copyFolder(globalTemplateDir, workingDir);
       }
 
-      // 3) Generate the OTA packs
+      // 3) Generate the OTA packs uniquely for this app
       const otaPacks = this.splitIntoOTAPacks(fullAppData);
 
-      // 4) Write (or overwrite) these packs in the same folder
-      const packsDir = path.join(workingDir, 'ota_packs');
+      // 4) Write (or overwrite) these OTA packs in the assets folder so Flutter can access them
+      const packsDir = path.join(workingDir, 'assets', 'ota_packs');
       fs.mkdirSync(packsDir, { recursive: true });
-
-      // Overwrite or create JSON files for each pack
       Object.entries(otaPacks).forEach(([packName, packData]) => {
         fs.writeFileSync(
           path.join(packsDir, `${packName}_pack.json`),
@@ -44,11 +45,28 @@ export class AppGenerationService {
         );
       });
 
-      // 5) Optionally update a Dart config file
+      // 5) Update Flutter's pubspec.yaml to include the OTA packs in assets
+      const pubspecPath = path.join(workingDir, 'pubspec.yaml');
+      if (fs.existsSync(pubspecPath)) {
+        let pubspecContent = fs.readFileSync(pubspecPath, 'utf8');
+        if (!pubspecContent.includes('assets/ota_packs/')) {
+          pubspecContent += `
+flutter:
+  assets:
+    - assets/ota_packs/design_pack.json
+    - assets/ota_packs/layout_pack.json
+    - assets/ota_packs/screens_pack.json
+    - assets/ota_packs/onboarding_pack.json
+    - assets/ota_packs/config_pack.json
+`;
+          fs.writeFileSync(pubspecPath, pubspecContent, 'utf8');
+        }
+      }
+
+      // 6) Optionally update a Dart config file
       const mobileApp = fullAppData.mobileApp || {};
       const configDir = path.join(workingDir, 'lib', 'config');
       fs.mkdirSync(configDir, { recursive: true });
-
       const appConfigDart = `
         // Auto-generated config file
         class AppConfig {
@@ -62,18 +80,8 @@ export class AppGenerationService {
       `;
       fs.writeFileSync(path.join(configDir, 'app_config.dart'), appConfigDart, 'utf8');
 
-      // 6) Decide if you want to run flutter commands every time or only on first creation
-      //    If you want a full build for updates as well, keep it as is. Otherwise, skip for updates.
-      //    Example: run on first build only
-      if (isNewApp) {
-        await this.runCommand('flutter pub get', { cwd: workingDir });
-        await this.runCommand('flutter build apk --release', { cwd: workingDir });
-      } else {
-        // Optionally re-run build if needed:
-        // await this.runCommand('flutter build apk --release', { cwd: workingDir });
-      }
-
-      // 7) Where is the APK, if built?
+      // 7) Optimize build process: run flutter commands only when needed.
+      // Define the APK path.
       const apkPath = path.join(
         workingDir,
         'build',
@@ -84,6 +92,19 @@ export class AppGenerationService {
         'app-release.apk'
       );
 
+      // Here we simply rebuild if it's a new app or if the APK doesn't exist yet.
+      const dependenciesChanged = isNewApp || !fs.existsSync(apkPath);
+
+      if (dependenciesChanged) {
+        // Run flutter pub get to install dependencies.
+        await this.runCommand('flutter pub get', { cwd: workingDir });
+        // Use incremental build flags:
+        await this.runCommand('flutter build apk --release --split-per-abi --no-tree-shake-icons', { cwd: workingDir });
+      } else {
+        this.logger.log(`Skipping full build. Using cached APK: ${apkPath}`);
+      }
+
+      // 8) Return result
       return {
         success: true,
         message: isNewApp
@@ -105,46 +126,58 @@ export class AppGenerationService {
   }
 
   /**
-   * Splits the fullAppData into separate OTA packs
+   * Splits the fullAppData into separate OTA packs.
+   * Each pack is unique per client.
    */
   private splitIntoOTAPacks(fullAppData: any): Record<string, any> {
     const packs: Record<string, any> = {};
-
-    // For example:
     packs.design = fullAppData.appDesign || {};
     packs.layout = fullAppData.appLayout || {};
     packs.screens = fullAppData.screens || [];
     packs.onboarding = fullAppData.onboardingScreens || [];
-    // Put entire mobileApp data into config pack
     const mobileApp = fullAppData.mobileApp || {};
     packs.config = {
       ...mobileApp,
       _id: mobileApp._id ? String(mobileApp._id) : undefined,
     };
-
     return packs;
   }
 
+  /**
+   * Copies the template folder to the destination.
+   * Non-OTA files are symlinked to save storage,
+   * while OTA packs are handled separately.
+   */
   private copyFolder(src: string, dest: string) {
     if (!fs.existsSync(src)) {
       throw new Error(`Source folder does not exist: ${src}`);
     }
+  
     fs.mkdirSync(dest, { recursive: true });
-
     const entries = fs.readdirSync(src, { withFileTypes: true });
+  
     for (const entry of entries) {
       const srcPath = path.join(src, entry.name);
       const destPath = path.join(dest, entry.name);
-
+  
       if (entry.isDirectory()) {
         fs.mkdirSync(destPath, { recursive: true });
         this.copyFolder(srcPath, destPath);
       } else {
-        fs.copyFileSync(srcPath, destPath);
+        // For files that are not part of OTA packs, use symbolic links.
+        // OTA packs are generated separately.
+        if (!destPath.includes('ota_packs')) {
+          if (!fs.existsSync(destPath)) {
+            fs.symlinkSync(srcPath, destPath, 'file');
+          }
+        }
       }
     }
   }
-
+  
+  /**
+   * Executes a shell command.
+   */
   private runCommand(command: string, options: { cwd: string }): Promise<string> {
     return new Promise((resolve, reject) => {
       exec(command, options, (error, stdout, stderr) => {
