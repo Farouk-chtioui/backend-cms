@@ -94,9 +94,7 @@ export class MobileAppController {
     return this.mobileAppService.getFullMobileAppData(mobileId);
   }
 
-  // ------------------------------------------
   // NEW ENDPOINT: Generate the mobile app
-  // ------------------------------------------
   @Post(':id/generate')
   async generateMobileApp(@Param('id') mobileAppId: string) {
     try {
@@ -114,6 +112,42 @@ export class MobileAppController {
       this.logger.error(`App generation failed: ${error.message}`);
       throw new HttpException(
         `Failed to generate app: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  // NEW ENDPOINT: Update build result after CI/CD workflow completes (callback from CI/CD)
+  @Put(':id/update-build')
+  async updateBuildResult(
+    @Param('id') mobileAppId: string,
+    @Body() body: { apkUrl: string },
+  ) {
+    try {
+      const result = await this.mobileAppService.updateBuildResult(mobileAppId, body.apkUrl);
+      return {
+        message: 'Build result updated successfully',
+        data: result,
+      };
+    } catch (error) {
+      this.logger.error(`Failed to update build result: ${error.message}`);
+      throw new HttpException(
+        `Failed to update build result: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  // NEW ENDPOINT: Retrieve build status including APK URL and QR code
+  @Get(':id/build-status')
+  async getBuildStatus(@Param('id') mobileAppId: string) {
+    try {
+      const status = await this.mobileAppService.getBuildStatus(mobileAppId);
+      return status;
+    } catch (error) {
+      this.logger.error(`Failed to get build status: ${error.message}`);
+      throw new HttpException(
+        `Failed to get build status: ${error.message}`,
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
