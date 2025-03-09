@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { exec } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
+import axios from 'axios';
 
 @Injectable()
 export class AppGenerationService {
@@ -9,113 +10,57 @@ export class AppGenerationService {
 
   async generateOrUpdateFlutterApp(fullAppData: any): Promise<any> {
     try {
-      // 1) Get the appId as a string for folder naming
-      const appIdString = fullAppData.mobileApp?._id
-        ? String(fullAppData.mobileApp._id)
-        : 'no_id';
+      // 1️⃣ Get appId for folder naming
+      const appIdString = fullAppData.mobileApp?._id ? String(fullAppData.mobileApp._id) : 'no_id';
 
       // Define working directory and template directory
       const workingDir = path.join('C:\\Users\\WT\\Desktop\\PFE PROJECT\\flutter_builds', appIdString);
       const globalTemplateDir = path.join('C:\\Users\\WT\\Desktop\\PFE PROJECT\\flutter_template');
 
-      // 2) Check if the template exists and if workingDir already exists
+      // 2️⃣ Ensure the Flutter template exists
+      if (!fs.existsSync(globalTemplateDir)) throw new Error(`Source template folder does not exist: ${globalTemplateDir}`);
+
+      // 3️⃣ Create working directory if new app
       let isNewApp = false;
-      if (!fs.existsSync(globalTemplateDir)) {
-        throw new Error(`Source template folder does not exist: ${globalTemplateDir}`);
-      }
       if (!fs.existsSync(workingDir)) {
         isNewApp = true;
         fs.mkdirSync(workingDir, { recursive: true });
-        // Copy the global template into the working directory.
-        // Non-OTA files will be symlinked to save space.
         this.copyFolder(globalTemplateDir, workingDir);
       }
 
-      // 3) Generate the OTA packs uniquely for this app
+      // 4️⃣ Generate OTA packs uniquely for this app
       const otaPacks = this.splitIntoOTAPacks(fullAppData);
+      if (!otaPacks || Object.keys(otaPacks).length === 0) throw new Error('OTA Pack generation failed!');
 
-      // 4) Write (or overwrite) these OTA packs in the assets folder so Flutter can access them
+      // 5️⃣ Write the OTA packs in the assets folder
       const packsDir = path.join(workingDir, 'assets', 'ota_packs');
       fs.mkdirSync(packsDir, { recursive: true });
-      Object.entries(otaPacks).forEach(([packName, packData]) => {
-        fs.writeFileSync(
-          path.join(packsDir, `${packName}_pack.json`),
-          JSON.stringify(packData, null, 2),
-          'utf8'
-        );
-      });
 
-      // 5) Update Flutter's pubspec.yaml to include the OTA packs in assets
-      const pubspecPath = path.join(workingDir, 'pubspec.yaml');
-      if (fs.existsSync(pubspecPath)) {
-        let pubspecContent = fs.readFileSync(pubspecPath, 'utf8');
-        if (!pubspecContent.includes('assets/ota_packs/')) {
-          pubspecContent += `
-flutter:
-  assets:
-    - assets/ota_packs/design_pack.json
-    - assets/ota_packs/layout_pack.json
-    - assets/ota_packs/screens_pack.json
-    - assets/ota_packs/onboarding_pack.json
-    - assets/ota_packs/config_pack.json
-`;
-          fs.writeFileSync(pubspecPath, pubspecContent, 'utf8');
-        }
-      }
-
-      // 6) Optionally update a Dart config file
-      const mobileApp = fullAppData.mobileApp || {};
-      const configDir = path.join(workingDir, 'lib', 'config');
-      fs.mkdirSync(configDir, { recursive: true });
-      const appConfigDart = `
-        // Auto-generated config file
-        class AppConfig {
-          static const String appId = "${mobileApp._id ?? ''}";
-          static const String name = "${mobileApp.name ?? ''}";
-          static const String packageName = "${mobileApp.packageName ?? ''}";
-          static const String version = "${mobileApp.version ?? ''}";
-          static const String environment = "${mobileApp.environment ?? ''}";
-          // Add more fields as needed
-        }
-      `;
-      fs.writeFileSync(path.join(configDir, 'app_config.dart'), appConfigDart, 'utf8');
-
-      // 7) Optimize build process: run flutter commands only when needed.
-      // Define the APK path.
-      const apkPath = path.join(
-        workingDir,
-        'build',
-        'app',
-        'outputs',
-        'apk',
-        'release',
-        'app-release.apk'
+      await Promise.all(
+        Object.entries(otaPacks).map(async ([packName, packData]) => {
+          await fs.promises.writeFile(
+            path.join(packsDir, `${packName}_pack.json`),
+            JSON.stringify(packData, null, 2),
+            'utf8'
+          );
+        })
       );
 
-      // Here we simply rebuild if it's a new app or if the APK doesn't exist yet.
-      const dependenciesChanged = isNewApp || !fs.existsSync(apkPath);
+      // 6️⃣ Update pubspec.yaml to include the OTA packs
+      this.updatePubspecYaml(workingDir);
 
-      if (dependenciesChanged) {
-        // Run flutter pub get to install dependencies.
-        await this.runCommand('flutter pub get', { cwd: workingDir });
-        // Use incremental build flags:
-        await this.runCommand('flutter build apk --release --split-per-abi --no-tree-shake-icons', { cwd: workingDir });
-      } else {
-        this.logger.log(`Skipping full build. Using cached APK: ${apkPath}`);
-      }
+      // 7️⃣ Trigger GitHub Actions workflow to build the app
+      await this.triggerBuildWorkflow(fullAppData);
 
-      // 8) Return result
+      // 8️⃣ Return response that build has started
       return {
         success: true,
-        message: isNewApp
-          ? 'Flutter app created successfully'
-          : 'Flutter app updated successfully',
-        appName: mobileApp.name || 'My Generated App',
-        apkPath: fs.existsSync(apkPath) ? apkPath : null,
+        message: isNewApp ? 'Flutter app creation triggered successfully' : 'Flutter app update triggered successfully',
+        appName: fullAppData.mobileApp?.name || 'My Generated App',
+        apkPath: null, // CI/CD will handle builds, no local APK available
         otaPacks: Object.fromEntries(
           Object.keys(otaPacks).map((packName) => [
-            packName,
-            path.join(packsDir, `${packName}_pack.json`),
+            packName, path.join(packsDir, `${packName}_pack.json`),
           ])
         ),
       };
@@ -126,8 +71,7 @@ flutter:
   }
 
   /**
-   * Splits the fullAppData into separate OTA packs.
-   * Each pack is unique per client.
+   * Splits fullAppData into separate OTA packs.
    */
   private splitIntoOTAPacks(fullAppData: any): Record<string, any> {
     const packs: Record<string, any> = {};
@@ -145,50 +89,99 @@ flutter:
 
   /**
    * Copies the template folder to the destination.
-   * Non-OTA files are symlinked to save storage,
-   * while OTA packs are handled separately.
+   * Uses file copying instead of symlinks on Windows.
    */
   private copyFolder(src: string, dest: string) {
-    if (!fs.existsSync(src)) {
-      throw new Error(`Source folder does not exist: ${src}`);
-    }
-  
+    if (!fs.existsSync(src)) throw new Error(`Source folder does not exist: ${src}`);
+
     fs.mkdirSync(dest, { recursive: true });
     const entries = fs.readdirSync(src, { withFileTypes: true });
-  
+
     for (const entry of entries) {
       const srcPath = path.join(src, entry.name);
       const destPath = path.join(dest, entry.name);
-  
+
       if (entry.isDirectory()) {
         fs.mkdirSync(destPath, { recursive: true });
         this.copyFolder(srcPath, destPath);
       } else {
-        // For files that are not part of OTA packs, use symbolic links.
-        // OTA packs are generated separately.
         if (!destPath.includes('ota_packs')) {
           if (!fs.existsSync(destPath)) {
-            fs.symlinkSync(srcPath, destPath, 'file');
+            try {
+              if (process.platform === 'win32') {
+                fs.copyFileSync(srcPath, destPath);
+              } else {
+                fs.symlinkSync(srcPath, destPath, 'file');
+              }
+            } catch (err) {
+              this.logger.error(`Failed to copy/symlink file: ${srcPath} -> ${destPath}`);
+            }
           }
         }
       }
     }
   }
-  
+
   /**
-   * Executes a shell command.
+   * Updates pubspec.yaml to include OTA packs without duplicates.
    */
-  private runCommand(command: string, options: { cwd: string }): Promise<string> {
-    return new Promise((resolve, reject) => {
-      exec(command, options, (error, stdout, stderr) => {
-        if (error) {
-          this.logger.error(`Command failed: ${command}, error: ${error.message}`);
-          this.logger.error(stderr);
-          return reject(error);
-        }
-        this.logger.debug(`Command succeeded: ${command}\n${stdout}`);
-        return resolve(stdout);
-      });
-    });
+  private updatePubspecYaml(workingDir: string) {
+    const pubspecPath = path.join(workingDir, 'pubspec.yaml');
+    if (fs.existsSync(pubspecPath)) {
+      let pubspecContent = fs.readFileSync(pubspecPath, 'utf8');
+
+      if (!pubspecContent.includes('assets/ota_packs/')) {
+        const assetConfig = `
+flutter:
+  assets:
+    - assets/ota_packs/design_pack.json
+    - assets/ota_packs/layout_pack.json
+    - assets/ota_packs/screens_pack.json
+    - assets/ota_packs/onboarding_pack.json
+    - assets/ota_packs/config_pack.json
+`;
+        pubspecContent = pubspecContent.replace(/(flutter:\s*)/, `$1\n${assetConfig}`);
+        fs.writeFileSync(pubspecPath, pubspecContent, 'utf8');
+      }
+    }
   }
+
+  /**
+   * Triggers GitHub Actions workflow via repository_dispatch.
+   */
+  private async triggerBuildWorkflow(configPayload: any): Promise<void> {
+    const token = process.env.GITHUB_TOKEN || 'YOUR_GITHUB_PERSONAL_ACCESS_TOKEN';
+    if (!token) {
+      this.logger.error('❌ GITHUB_TOKEN is missing!'); // Add logging
+      throw new Error('GITHUB_TOKEN is missing!');
+    }
+  
+    const repoOwner = 'Farouk-chtioui';
+    const repoName = 'flutter_template';
+    const githubApiUrl = `https://api.github.com/repos/${repoOwner}/${repoName}/dispatches`;
+  
+    try {
+      this.logger.log(`🚀 Sending request to GitHub Actions: ${githubApiUrl}`);
+  
+      const response = await axios.post(
+        githubApiUrl,
+        {
+          event_type: 'build_app',
+          client_payload: { config: configPayload },
+        },
+        {
+          headers: {
+            Accept: 'application/vnd.github.v3+json',
+            Authorization: `token ${token}`,
+          },
+        }
+      );
+  
+      this.logger.log(`✅ GitHub Actions Triggered! Response: ${response.status}`);
+    } catch (error) {
+      this.logger.error(`❌ Failed to trigger GitHub Actions: ${error.message}`);
+      throw error;
+    }
+  }
+  
 }
