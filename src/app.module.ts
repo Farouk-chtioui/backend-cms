@@ -13,7 +13,6 @@ import { OnboardingScreensModule } from './modules/onboarding-screens/onboarding
 import { ImagesModule } from './modules/images/images.module';
 import { WidgetModule } from './modules/widget/widget.module';
 import { WidgetScreenModule } from './modules/widgetscreen/widgetscreen.module';
-import { GenerateModule } from './modules/generate/generate.module';
 
 @Module({
   imports: [
@@ -25,7 +24,6 @@ import { GenerateModule } from './modules/generate/generate.module';
     MobileAppModule,
     AppLayoutModule, 
     ScreenModule,
-    GenerateModule,
     OnboardingScreensModule,
     ImagesModule,
     WidgetModule,
