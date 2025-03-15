@@ -205,16 +205,20 @@ export class AppLayoutService {
       throw new NotFoundException(`Tab ${tabName} not found`);
     }
 
-    if (routeType === 'screen' && !screenId) {
-      const screen = await this.screenService.ensureDefaultScreenExists(layout.appId.toString(), route);
-      screenId = screen._id.toString();
+    if (routeType === 'screen') {
+      let screen;
+      if (screenId) {
+        screen = await this.screenService.findById(screenId);
+      } else {
+        screen = await this.screenService.ensureDefaultScreenExists(layout.appId.toString(), route);
+      }
+      layout.bottomBarTabs[tabIndex].screenId = screen._id;
+    } else {
+      layout.bottomBarTabs[tabIndex].screenId = undefined;
     }
 
     layout.bottomBarTabs[tabIndex].routeType = routeType;
     layout.bottomBarTabs[tabIndex].route = route;
-    if (routeType === 'screen' && screenId) {
-      layout.bottomBarTabs[tabIndex].screenId = screenId as any;
-    }
 
     return layout.save();
   }
