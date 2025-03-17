@@ -14,6 +14,8 @@ import { ImagesModule } from './modules/images/images.module';
 import { WidgetModule } from './modules/widget/widget.module';
 import { WidgetScreenModule } from './modules/widgetscreen/widgetscreen.module';
 import { GenerateModule } from './modules/generate/generate.module';
+import { HeaderModule } from './modules/header/header.module';
+
 
 @Module({
   imports: [
@@ -30,6 +32,7 @@ import { GenerateModule } from './modules/generate/generate.module';
     ImagesModule,
     WidgetModule,
     WidgetScreenModule,
+    HeaderModule, // Added HeaderModule
   ],
   providers: [LiveUpdatesGateway],
 })
