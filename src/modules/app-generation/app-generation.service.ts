@@ -1,30 +1,36 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { exec } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import axios from 'axios';
 import * as QRCode from 'qrcode';
+import { Client, Query, Storage } from 'node-appwrite';
+import * as AdmZip from 'adm-zip'; // Add this import
 
 @Injectable()
 export class AppGenerationService {
   private readonly logger = new Logger(AppGenerationService.name);
 
-  async generateOrUpdateFlutterApp(fullAppData: any): Promise<any> {
+  /**
+   * Generates or updates the Flutter app.
+   * @param fullAppData The full configuration data for the app.
+   * @param updateOnlyOta If true, only update OTA packs without triggering a full rebuild.
+   */
+  async generateOrUpdateFlutterApp(fullAppData: any, updateOnlyOta: boolean = false): Promise<any> {
     try {
-      // 1️⃣ Get appId for folder naming
+      // Step 1: Determine appId and setup working directories.
       const appId = fullAppData.mobileApp?._id ? String(fullAppData.mobileApp._id) : 'no_id';
       const workingDir = path.join('C:\\Users\\WT\\Desktop\\PFE PROJECT\\flutter_builds', appId);
       const globalTemplateDir = path.join('C:\\Users\\WT\\Desktop\\PFE PROJECT\\flutter_template');
 
       this.logger.log(`Starting app generation for appId: ${appId}`);
 
-      // 2️⃣ Ensure the Flutter template exists
+      // Step 2: Ensure Flutter template exists.
       if (!fs.existsSync(globalTemplateDir)) {
         this.logger.error(`Template folder does not exist: ${globalTemplateDir}`);
         throw new Error(`Source template folder does not exist: ${globalTemplateDir}`);
       }
 
-      // 3️⃣ Create working directory if new app
+      // Step 3: Create working directory and copy template if needed.
       let isNewApp = false;
       if (!fs.existsSync(workingDir)) {
         isNewApp = true;
@@ -35,56 +41,103 @@ export class AppGenerationService {
         this.logger.log(`Working directory already exists: ${workingDir}`);
       }
 
-      // 4️⃣ Generate OTA packs uniquely for this app
+      // Step 4: Generate OTA packs from fullAppData.
       const otaPacks = this.splitIntoOTAPacks(fullAppData);
       if (!otaPacks || Object.keys(otaPacks).length === 0) {
         this.logger.error("OTA Pack generation failed!");
         throw new Error('OTA Pack generation failed!');
       }
 
-      // 5️⃣ Write the OTA packs in the assets folder
+      // Step 5: Write OTA packs as JSON files.
       const packsDir = path.join(workingDir, 'assets', 'ota_packs');
       fs.mkdirSync(packsDir, { recursive: true });
       await Promise.all(
         Object.entries(otaPacks).map(async ([packName, packData]) => {
-          await fs.promises.writeFile(
-            path.join(packsDir, `${packName}_pack.json`),
-            JSON.stringify(packData, null, 2),
-            'utf8'
-          );
-          this.logger.log(`Wrote OTA pack for ${packName}`);
+          const filePath = path.join(packsDir, `${packName}_pack.json`);
+          await fs.promises.writeFile(filePath, JSON.stringify(packData, null, 2), 'utf8');
+          this.logger.log(`Wrote OTA pack for ${packName} at ${filePath}`);
         })
       );
 
-      // 6️⃣ Update pubspec.yaml to include the OTA packs
-      this.updatePubspecYaml(workingDir);
-      this.logger.log('Updated pubspec.yaml to include OTA packs');
+      // Step 5.1: Upload OTA packs to Appwrite.
+      // Pass appId so we can include it in the file name.
+      const otaUploads = await this.uploadOtaPacksToCloud(workingDir, appId);
+      this.logger.log(`OTA packs uploaded to cloud: ${JSON.stringify(otaUploads)}`);
 
-      // 7️⃣ Trigger GitHub Actions workflow to build the app
+      // Step 5.2: Generate OTA endpoints in the required format.
+      const otaEndpoints = this.generateOtaEndpoints(otaUploads);
+      const endpointsFilePath = path.join(workingDir, 'assets', 'ota_packs', 'endpoints.json');
+      await fs.promises.writeFile(endpointsFilePath, JSON.stringify(otaEndpoints, null, 2), 'utf8');
+      this.logger.log(`OTA endpoints written to ${endpointsFilePath}`);
+
+      // Step 6: Update pubspec.yaml to include OTA assets.
+      this.updatePubspecYaml(workingDir);
+      this.logger.log('Updated pubspec.yaml with OTA assets');
+
+      // If updateOnlyOta is true and an APK already exists, skip triggering the build workflow.
+      if (updateOnlyOta) {
+        // Optionally, check if the APK exists.
+        const apkPath = path.join(workingDir, 'build', 'app', 'outputs', 'apk', 'release', 'app-release.apk');
+        let existingApkUrl = '';
+        if (fs.existsSync(apkPath)) {
+          // In a real scenario, you would retrieve the actual APK URL (e.g., stored in a database)
+          existingApkUrl = 'existing_apk_url'; // Placeholder value.
+        }
+        return {
+          success: true,
+          message: 'OTA packs updated. No rebuild triggered as APK already exists.',
+          appName: fullAppData.mobileApp?.name || 'My Generated App',
+          apkUrl: existingApkUrl,
+          otaPacks: Object.fromEntries(
+            Object.keys(otaPacks).map((packName) => [
+              packName,
+              {
+                localPath: path.join(packsDir, `${packName}_pack.json`),
+                cloudFileId: otaUploads[`${packName}_pack.json`] || null,
+                endpoint: otaEndpoints[packName] || null,
+              },
+            ])
+          ),
+        };
+      }
+
+      // Step 7: Trigger GitHub Actions workflow to build the app.
       await this.triggerBuildWorkflow(fullAppData);
       this.logger.log("GitHub Actions workflow triggered");
 
-      // 8️⃣ Track GitHub Actions run until it completes and get artifact URL.
-      const apkUrl = await this.trackWorkflow(appId);
-      this.logger.log(`APK URL retrieved: ${apkUrl}`);
+      // Step 8: Track workflow until completion (to ensure build is done).
+      const githubArtifact = await this.trackWorkflow(appId);
+      this.logger.log("Build workflow completed");
 
-      // 9️⃣ Update build result by generating QR code for the apkUrl.
-      const buildResult = await this.updateApkUrlAndGenerateQr(appId, apkUrl);
-      this.logger.log("Build result updated with QR code");
+      // Step 8.5: Download GitHub artifact, extract APK, and upload to Appwrite.
+      const apkFileId = await this.downloadAndUploadApkToAppwrite(githubArtifact, appId);
+      this.logger.log(`APK uploaded to Appwrite with file ID: ${apkFileId}`);
 
-      // 10️⃣ Return build result including the generated QR code.
+      // Generate APK download URL.
+      const apkDownloadUrl = `${process.env.APPWRITE_ENDPOINT}/storage/buckets/${process.env.APPWRITE_APK_BUCKET_ID}/files/${apkFileId}/download?project=${process.env.APPWRITE_PROJECT_ID}&mode=admin`;
+      this.logger.log(`APK download URL: ${apkDownloadUrl}`);
+
+      // Step 9: Generate QR code for the APK download URL.
+      const qrCodeDataUrl = await QRCode.toDataURL(apkDownloadUrl);
+      this.logger.log("QR Code generated for APK download URL");
+
+      // Step 10: Return build result with OTA pack details, live endpoints, and APK download info.
       return {
         success: true,
         message: isNewApp
           ? 'Flutter app creation triggered and build completed successfully'
           : 'Flutter app update triggered and build completed successfully',
         appName: fullAppData.mobileApp?.name || 'My Generated App',
-        apkUrl: buildResult.apkUrl,
-        qrCodeDataUrl: buildResult.qrCodeDataUrl,
+        apkUrl: apkDownloadUrl,
+        qrCodeDataUrl,
         otaPacks: Object.fromEntries(
           Object.keys(otaPacks).map((packName) => [
             packName,
-            path.join(packsDir, `${packName}_pack.json`),
+            {
+              localPath: path.join(packsDir, `${packName}_pack.json`),
+              cloudFileId: otaUploads[`${packName}_pack.json`] || null,
+              endpoint: otaEndpoints[packName] || null,
+            },
           ])
         ),
       };
@@ -94,111 +147,267 @@ export class AppGenerationService {
     }
   }
 
-  // New method to track the GitHub Actions workflow
-  // New method to track the GitHub Actions workflow and poll for artifacts.
-async trackWorkflow(appId: string): Promise<string> {
-  const token = process.env.GITHUB_TOKEN;
-  if (!token) {
-    throw new Error('GITHUB_TOKEN is missing!');
-  }
-  const repoOwner = 'Farouk-chtioui';
-  const repoName = 'flutter_template';
-  let runId: number | null = null;
-
-  this.logger.log(`Tracking workflow for appId: ${appId}`);
-
-  // Poll GitHub Actions API to find the latest active workflow run for our repository_dispatch event.
-  const runsApiUrl = `https://api.github.com/repos/${repoOwner}/${repoName}/actions/runs?event=repository_dispatch`;
-  let attempts = 0;
-  const maxRunAttempts = 30; // ~5 minutes
-  while (attempts < maxRunAttempts && !runId) {
-    this.logger.log(`Checking workflow runs (attempt ${attempts + 1})`);
-    const runsResponse = await axios.get(runsApiUrl, {
-      headers: { Authorization: `token ${token}` },
-    });
-    const runs = runsResponse.data.workflow_runs;
-    // Filter out runs that are already completed; only pick those that are queued or in_progress.
-    const activeRuns = runs.filter((run: any) =>
-      run.status === 'queued' || run.status === 'in_progress'
-    );
-    if (activeRuns.length > 0) {
-      runId = activeRuns[0].id;
-      this.logger.log(`Found active workflow run with id: ${runId}`);
-      break;
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Upload OTA packs to Appwrite cloud storage with mobileAppId included in the file name.
+  async uploadOtaPacksToCloud(workingDir: string, mobileAppId: string): Promise<Record<string, string>> {
+    const packsDir = path.join(workingDir, 'assets', 'ota_packs');
+    const files = fs.readdirSync(packsDir);
+    if (files.length === 0) {
+      this.logger.error(`No OTA pack files found in ${packsDir}`);
+      throw new Error(`No OTA pack files found in ${packsDir}`);
     }
-    attempts++;
-    await new Promise((resolve) => setTimeout(resolve, 10000));
-  }
-  if (!runId) {
-    this.logger.error("No active workflow run found for the build event");
-    throw new Error("No active workflow run found for the build event");
-  }
-
-  // Poll for the workflow run status until it's completed.
-  attempts = 0;
-  const runApiUrl = `https://api.github.com/repos/${repoOwner}/${repoName}/actions/runs/${runId}`;
-  let runStatus = "";
-  const maxStatusAttempts = 60; // ~10 minutes max wait
-  while (attempts < maxStatusAttempts) {
-    const runResponse = await axios.get(runApiUrl, {
-      headers: { Authorization: `token ${token}` },
-    });
-    runStatus = runResponse.data.status; // e.g., "in_progress" or "completed"
-    this.logger.log(`Workflow run status: ${runStatus} (attempt ${attempts + 1})`);
-    if (runStatus === "completed") {
-      break;
+    // Initialize Appwrite client.
+    const client = new Client();
+    client
+      .setEndpoint(process.env.APPWRITE_ENDPOINT)
+      .setProject(process.env.APPWRITE_PROJECT_ID)
+      .setKey(process.env.APPWRITE_API_KEY);
+    const storage = new Storage(client);
+    const uploadResults: Record<string, string> = {};
+  
+    for (const fileName of files) {
+      const filePath = path.join(packsDir, fileName);
+      // Generate a custom file name that includes mobileAppId.
+      const customFileName = `${mobileAppId}_${fileName}`;
+      try {
+        // List existing files with this custom name using proper query syntax.
+        const existingFiles = await storage.listFiles(process.env.APPWRITE_OTA_BUCKET_ID, [
+          Query.equal("name", customFileName)
+        ]);
+        if (existingFiles.files && existingFiles.files.length > 0) {
+          // Delete all matching files.
+          for (const existingFile of existingFiles.files) {
+            await storage.deleteFile(process.env.APPWRITE_OTA_BUCKET_ID, existingFile.$id);
+            this.logger.log(`Deleted old OTA file ${existingFile.$id} with name ${customFileName}`);
+          }
+        }
+        // Read the file as a Buffer.
+        const fileBuffer = fs.readFileSync(filePath);
+        const blob = new Blob([fileBuffer]);
+        const file = new File([blob], customFileName, { type: 'application/json' });
+        // Upload the file with a unique ID.
+        const response = await storage.createFile(
+          process.env.APPWRITE_OTA_BUCKET_ID,
+          'unique()', // Let Appwrite generate a unique file ID.
+          file
+        );
+        uploadResults[fileName] = response.$id;
+        this.logger.log(`Uploaded ${customFileName} with file ID ${response.$id}`);
+      } catch (error) {
+        this.logger.error(`Error uploading ${fileName}: ${error.message}`);
+        throw error;
+      }
     }
-    attempts++;
-    await new Promise((resolve) => setTimeout(resolve, 10000));
-  }
-  if (runStatus !== "completed") {
-    this.logger.error("Workflow run did not complete in the expected time");
-    throw new Error("Workflow run did not complete in the expected time");
+    return uploadResults;
   }
 
-  // Once completed, poll for the artifact until it's available.
-  const artifactsApiUrl = `https://api.github.com/repos/${repoOwner}/${repoName}/actions/runs/${runId}/artifacts`;
-  let artifact: any = null;
-  const maxArtifactAttempts = 10;
-  for (let i = 0; i < maxArtifactAttempts; i++) {
-    this.logger.log(`Polling artifacts (attempt ${i + 1})`);
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Upload the APK file to Appwrite and return its file ID.
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Download GitHub artifact, extract APK, and upload to Appwrite
+  async downloadAndUploadApkToAppwrite(githubArtifact: any, mobileAppId: string): Promise<string> {
+    const artifactId = githubArtifact.id;
+    // Correct API URL format for downloading artifacts
+    const downloadUrl = `https://api.github.com/repos/Farouk-chtioui/flutter_template/actions/artifacts/${artifactId}/zip`;
+    this.logger.log(`Downloading artifact from GitHub API: ${downloadUrl}`);
+    
+    // Get the GitHub token
+    const token = process.env.GITHUB_TOKEN;
+    if (!token) {
+      throw new Error('GITHUB_TOKEN is missing!');
+    }
+    
     try {
-      const artifactsResponse = await axios.get(artifactsApiUrl, {
+      // Download the zip artifact from GitHub using the correct API endpoint
+      const response = await axios.get(downloadUrl, {
+        headers: { 
+          Accept: 'application/vnd.github.v3+json',
+          Authorization: `token ${token}`
+        },
+        responseType: 'arraybuffer'
+      });
+      
+      // Process the downloaded zip file in memory
+      const zip = new AdmZip(Buffer.from(response.data));
+      const zipEntries = zip.getEntries();
+      
+      // Find the APK file in the zip
+      let apkEntry = null;
+      for (const entry of zipEntries) {
+        if (entry.entryName.endsWith('.apk')) {
+          apkEntry = entry;
+          break;
+        }
+      }
+      
+      if (!apkEntry) {
+        throw new Error('No APK file found in the artifact!');
+      }
+      
+      this.logger.log(`Found APK in artifact: ${apkEntry.entryName}`);
+      
+      // Extract APK data to a buffer
+      const apkBuffer = apkEntry.getData();
+      
+      // Initialize Appwrite client
+      const client = new Client();
+      client
+        .setEndpoint(process.env.APPWRITE_ENDPOINT)
+        .setProject(process.env.APPWRITE_PROJECT_ID)
+        .setKey(process.env.APPWRITE_API_KEY);
+      
+      const storage = new Storage(client);
+      // Generate a custom file name that includes mobileAppId
+      const customApkName = `${mobileAppId}_app-release.apk`;
+      
+      // List and delete any existing files with the same custom name
+      const existingFiles = await storage.listFiles(process.env.APPWRITE_APK_BUCKET_ID, [
+        Query.equal("name", customApkName)
+      ]);
+      
+      if (existingFiles.files && existingFiles.files.length > 0) {
+        for (const existingFile of existingFiles.files) {
+          await storage.deleteFile(process.env.APPWRITE_APK_BUCKET_ID, existingFile.$id);
+          this.logger.log(`Deleted old APK file ${existingFile.$id} with name ${customApkName}`);
+        }
+      }
+      
+      // Create a Blob and File object from the APK buffer
+      const blob = new Blob([apkBuffer], { type: 'application/vnd.android.package-archive' });
+      const file = new File([blob], customApkName, { type: 'application/vnd.android.package-archive' });
+      
+      // Upload the file to Appwrite
+      const uploadResponse = await storage.createFile(
+        process.env.APPWRITE_APK_BUCKET_ID,
+        'unique()', // Let Appwrite generate a unique file ID
+        file
+      );
+      
+      this.logger.log(`Successfully uploaded APK to Appwrite with file ID: ${uploadResponse.$id}`);
+      return uploadResponse.$id;
+    } catch (error) {
+      this.logger.error(`Failed to download and upload APK: ${error.message}`);
+      if (error.response) {
+        this.logger.error(`Response status: ${error.response.status}`);
+        this.logger.error(`Response data: ${JSON.stringify(error.response.data)}`);
+      }
+      throw error;
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Generate OTA endpoints using the real URL format.
+  private generateOtaEndpoints(otaUploads: Record<string, string>): Record<string, string> {
+    const endpoints: Record<string, string> = {};
+    for (const fileName in otaUploads) {
+      const fileId = otaUploads[fileName];
+      // Remove the '_pack.json' suffix to use a clean key.
+      const key = fileName.replace('_pack.json', '');
+      endpoints[key] = `${process.env.APPWRITE_ENDPOINT}/storage/buckets/${process.env.APPWRITE_OTA_BUCKET_ID}/files/${fileId}/view?project=${process.env.APPWRITE_PROJECT_ID}&mode=admin`;
+    }
+    return endpoints;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Track GitHub Actions workflow until completion.
+  async trackWorkflow(appId: string): Promise<any> {
+    const token = process.env.GITHUB_TOKEN;
+    if (!token) {
+      throw new Error('GITHUB_TOKEN is missing!');
+    }
+    const repoOwner = 'Farouk-chtioui';
+    const repoName = 'flutter_template';
+    let runId: number | null = null;
+
+    this.logger.log(`Tracking workflow for appId: ${appId}`);
+
+    const runsApiUrl = `https://api.github.com/repos/${repoOwner}/${repoName}/actions/runs?event=repository_dispatch`;
+    let attempts = 0;
+    const maxRunAttempts = 30;
+    while (attempts < maxRunAttempts && !runId) {
+      this.logger.log(`Checking workflow runs (attempt ${attempts + 1})`);
+      const runsResponse = await axios.get(runsApiUrl, {
         headers: { Authorization: `token ${token}` },
       });
-      const artifacts = artifactsResponse.data.artifacts;
-      this.logger.log(`Found ${artifacts.length} artifacts`);
-      artifact = artifacts.find((a: any) => a.name === "flutter-apks");
-      if (artifact) {
-        this.logger.log("Artifact 'flutter-apks' found");
+      const runs = runsResponse.data.workflow_runs;
+      const activeRuns = runs.filter((run: any) =>
+        run.status === 'queued' || run.status === 'in_progress'
+      );
+      if (activeRuns.length > 0) {
+        runId = activeRuns[0].id;
+        this.logger.log(`Found active workflow run with id: ${runId}`);
         break;
       }
-    } catch (err) {
-      this.logger.error(`Error fetching artifacts: ${err.message}`);
+      attempts++;
+      await new Promise((resolve) => setTimeout(resolve, 10000));
     }
-    await new Promise((resolve) => setTimeout(resolve, 10000));
-  }
-  if (!artifact) {
-    this.logger.error("Artifact 'flutter-apks' not found after polling");
-    throw new Error("Artifact 'flutter-apks' not found");
-  }
-  // Construct the correct UI URL for the artifact.
-  const apkUrl = `https://github.com/${repoOwner}/${repoName}/actions/runs/${runId}/artifacts/${artifact.id}`;
-  this.logger.log(`Workflow complete. APK URL: ${apkUrl}`);
-  return apkUrl;
-}
+    if (!runId) {
+      this.logger.error("No active workflow run found for the build event");
+      throw new Error("No active workflow run found for the build event");
+    }
 
+    attempts = 0;
+    const runApiUrl = `https://api.github.com/repos/${repoOwner}/${repoName}/actions/runs/${runId}`;
+    let runStatus = "";
+    const maxStatusAttempts = 60;
+    while (attempts < maxStatusAttempts) {
+      const runResponse = await axios.get(runApiUrl, {
+        headers: { Authorization: `token ${token}` },
+      });
+      runStatus = runResponse.data.status;
+      this.logger.log(`Workflow run status: ${runStatus} (attempt ${attempts + 1})`);
+      if (runStatus === "completed") {
+        break;
+      }
+      attempts++;
+      await new Promise((resolve) => setTimeout(resolve, 10000));
+    }
+    if (runStatus !== "completed") {
+      this.logger.error("Workflow run did not complete in the expected time");
+      throw new Error("Workflow run did not complete in the expected time");
+    }
 
-  // New method to update APK URL and generate QR code.
+    const artifactsApiUrl = `https://api.github.com/repos/${repoOwner}/${repoName}/actions/runs/${runId}/artifacts`;
+    let artifact: any = null;
+    const maxArtifactAttempts = 10;
+    for (let i = 0; i < maxArtifactAttempts; i++) {
+      this.logger.log(`Polling artifacts (attempt ${i + 1})`);
+      try {
+        const artifactsResponse = await axios.get(artifactsApiUrl, {
+          headers: { Authorization: `token ${token}` },
+        });
+        const artifacts = artifactsResponse.data.artifacts;
+        this.logger.log(`Found ${artifacts.length} artifacts`);
+        artifact = artifacts.find((a: any) => a.name === "flutter-apks");
+        if (artifact) {
+          this.logger.log("Artifact 'flutter-apks' found");
+          break;
+        }
+      } catch (err) {
+        this.logger.error(`Error fetching artifacts: ${err.message}`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10000));
+    }
+    if (!artifact) {
+      this.logger.error("Artifact 'flutter-apks' not found after polling");
+      throw new Error("Artifact 'flutter-apks' not found");
+    }
+    // Return the artifact details instead of just a URL
+    this.logger.log(`Workflow complete. Found artifact ID: ${artifact.id}`);
+    return artifact;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Update the APK URL and generate a QR code.
   async updateApkUrlAndGenerateQr(appId: string, apkUrl: string): Promise<any> {
     this.logger.log(`Updating app (${appId}) with APK URL: ${apkUrl}`);
-    // Generate a QR code as a data URL
     const qrCodeDataUrl = await QRCode.toDataURL(apkUrl);
     this.logger.log(`QR Code generated for APK URL`);
     return { success: true, appId, apkUrl, qrCodeDataUrl };
   }
 
-  // Helper method to split fullAppData into OTA packs.
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Split fullAppData into separate OTA packs.
   private splitIntoOTAPacks(fullAppData: any): Record<string, any> {
     const packs: Record<string, any> = {};
     packs.design = fullAppData.appDesign || {};
@@ -213,7 +422,8 @@ async trackWorkflow(appId: string): Promise<string> {
     return packs;
   }
 
-  // Helper method to copy the template folder
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Recursively copy the Flutter template folder to the working directory.
   private copyFolder(src: string, dest: string) {
     if (!fs.existsSync(src)) throw new Error(`Source folder does not exist: ${src}`);
     fs.mkdirSync(dest, { recursive: true });
@@ -225,6 +435,7 @@ async trackWorkflow(appId: string): Promise<string> {
         fs.mkdirSync(destPath, { recursive: true });
         this.copyFolder(srcPath, destPath);
       } else {
+        // Skip copying OTA pack files from the template.
         if (!destPath.includes('ota_packs')) {
           if (!fs.existsSync(destPath)) {
             try {
@@ -242,7 +453,8 @@ async trackWorkflow(appId: string): Promise<string> {
     }
   }
 
-  // Helper method to update pubspec.yaml for OTA packs.
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Update pubspec.yaml to include OTA packs and endpoints.
   private updatePubspecYaml(workingDir: string) {
     const pubspecPath = path.join(workingDir, 'pubspec.yaml');
     if (fs.existsSync(pubspecPath)) {
@@ -256,6 +468,7 @@ flutter:
     - assets/ota_packs/screens_pack.json
     - assets/ota_packs/onboarding_pack.json
     - assets/ota_packs/config_pack.json
+    - assets/ota_packs/endpoints.json
 `;
         pubspecContent = pubspecContent.replace(/(flutter:\s*)/, `$1\n${assetConfig}`);
         fs.writeFileSync(pubspecPath, pubspecContent, 'utf8');
@@ -264,7 +477,8 @@ flutter:
     }
   }
 
-  // Helper method to trigger the GitHub Actions workflow via repository_dispatch.
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Trigger the GitHub Actions workflow via repository_dispatch.
   private async triggerBuildWorkflow(configPayload: any): Promise<void> {
     const token = process.env.GITHUB_TOKEN || 'YOUR_GITHUB_PERSONAL_ACCESS_TOKEN';
     if (!token) {
