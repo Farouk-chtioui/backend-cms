@@ -1,5 +1,6 @@
-import { Controller, Get, Post, Put, Delete, Body, Param } from '@nestjs/common';
+import { Controller, Get, Post, Put, Patch, Delete, Body, Param, NotFoundException } from '@nestjs/common';
 import { WidgetScreenService } from './widgetscreen.service';
+import { HeaderConfig } from '../header/header.interface';
 
 @Controller('widgetscreens')
 export class WidgetScreenController {
@@ -15,7 +16,6 @@ export class WidgetScreenController {
     return this.widgetScreenService.findAll();
   }
   
-
   @Get('mobile/:mobileAppId')
   async findByMobileApp(@Param('mobileAppId') mobileAppId: string) {
     return this.widgetScreenService.findByMobileApp(mobileAppId);
@@ -34,5 +34,25 @@ export class WidgetScreenController {
   @Delete(':id')
   async delete(@Param('id') id: string) {
     return this.widgetScreenService.delete(id);
+  }
+
+  // Header-specific endpoints
+  @Get(':id/header')
+  async getHeader(@Param('id') id: string) {
+    const screen = await this.widgetScreenService.findOne(id);
+    return screen.header;
+  }
+
+  @Patch(':id/header')
+  async updateHeader(
+    @Param('id') id: string, 
+    @Body() headerData: { header: HeaderConfig | null }
+  ) {
+    return this.widgetScreenService.updateHeader(id, headerData.header);
+  }
+
+  @Delete(':id/header')
+  async deleteHeader(@Param('id') id: string) {
+    return this.widgetScreenService.deleteHeader(id);
   }
 }
