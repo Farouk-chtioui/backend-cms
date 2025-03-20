@@ -301,9 +301,9 @@ export class AppGenerationService {
       throw new Error(`No OTA pack files found in ${packsDir}`);
     }
     
-    this.logger.log(`Starting OTA pack upload for ${files.length} files, force update: ${forceUpdate}`);
-    
-    // Initialize Appwrite client.
+    // Concurrency control: adjust limit as needed (e.g. 5 or 10).
+    const concurrencyLimit = 5;
+    const uploadQueue: Array<() => Promise<void>> = [];
     const client = new Client();
     client
       .setEndpoint(process.env.APPWRITE_ENDPOINT)
@@ -311,92 +311,90 @@ export class AppGenerationService {
       .setKey(process.env.APPWRITE_API_KEY);
     const storage = new Storage(client);
     const uploadResults: Record<string, string> = {};
-  
+
     for (const fileName of files) {
-      // Skip endpoints.json, we'll generate it later
       if (fileName === 'endpoints.json') continue;
       
       const filePath = path.join(packsDir, fileName);
-      // Generate a custom file name that includes mobileAppId.
       const customFileName = `${mobileAppId}_${fileName}`;
-      // Create a stable and valid file ID within Appwrite's constraints
       const shortHash = crypto.createHash('md5').update(mobileAppId).digest('hex').slice(0, 8);
       const packType = fileName.replace('_pack.json', '');
-      // Ensure the ID is valid and under 36 chars with only allowed characters
       const stableFileId = `${shortHash}_${packType}`
         .toLowerCase()
         .replace(/[^a-z0-9._-]/g, '_')
         .slice(0, 36);
-      
-      try {
-        // Read the file content and calculate hash
-        const fileContent = fs.readFileSync(filePath, 'utf8');
-        const contentHash = crypto.createHash('md5').update(fileContent).digest('hex');
-        const cacheKey = `${mobileAppId}_${fileName}`;
-        this.logger.log(`Processing file: ${fileName}, content hash: ${contentHash}`);
-        
-        // Check if file content has changed since last upload (skip if forceUpdate is true)
-        if (!forceUpdate && this.otaPackHashCache.get(cacheKey) === contentHash) {
-          // Content hasn't changed, we don't need to upload again
-          this.logger.log(`Content hash match found in cache for ${fileName}`);
-          
-          try {
-            // Verify the file exists by trying to view it
-            await storage.getFileView(process.env.APPWRITE_OTA_BUCKET_ID, stableFileId);
-            uploadResults[fileName] = stableFileId;
-            this.logger.log(`Content unchanged for ${fileName}, using existing file ${stableFileId}`);
-            continue; // Skip to the next file
-          } catch (viewError) {
-            this.logger.warn(`File ${stableFileId} couldn't be viewed in Appwrite, will re-upload. Error: ${viewError.message}`);
-            // Fall through to upload the file again
-          }
-        }
-        
-        // Content has changed, force update is requested, or file doesn't exist - proceed with upload
-        this.logger.log(`Preparing to upload ${fileName} with stable ID: ${stableFileId}`);
-        
+
+      // Prepare the upload logic without extra getFileView calls
+      uploadQueue.push(async () => {
         try {
-          // Try to delete any existing file with this ID first
-          try {
-            await storage.deleteFile(process.env.APPWRITE_OTA_BUCKET_ID, stableFileId);
-            this.logger.log(`Deleted existing file with ID ${stableFileId}`);
-          } catch (deleteError) {
-            // It's okay if the file doesn't exist yet
-            this.logger.log(`No existing file to delete for ID ${stableFileId} or delete failed: ${deleteError.message}`);
+          const fileContent = fs.readFileSync(filePath, 'utf8');
+          const contentHash = crypto.createHash('md5').update(fileContent).digest('hex');
+          const cacheKey = `${mobileAppId}_${fileName}`;
+          this.logger.log(`Processing file: ${fileName}, hash: ${contentHash}`);
+
+          // Skip uploading if hash matches and no force update
+          if (!forceUpdate && this.otaPackHashCache.get(cacheKey) === contentHash) {
+            uploadResults[fileName] = stableFileId;
+            this.logger.log(`No changes for ${fileName}, skipping upload`);
+            return;
           }
-          
-          // Create a Blob and File from the content
+
+          // Attempt a fresh createFile
           const blob = new Blob([fileContent], { type: 'application/json' });
           const file = new File([blob], customFileName, { type: 'application/json' });
-          
-          // Upload the file with our stable ID
-          this.logger.log(`Uploading ${customFileName} to Appwrite with ID: ${stableFileId}...`);
-          const response = await storage.createFile(
-            process.env.APPWRITE_OTA_BUCKET_ID,
-            stableFileId, // Use our stable ID instead of random 'unique()'
-            file
-          );
-          
-          // Verify the file was uploaded correctly by fetching a preview
-          await storage.getFileView(process.env.APPWRITE_OTA_BUCKET_ID, stableFileId);
-          
-          // Update our cache with the new content hash
+          try {
+            this.logger.log(`Creating file ID: ${stableFileId}`);
+            await storage.createFile(
+              process.env.APPWRITE_OTA_BUCKET_ID,
+              stableFileId,
+              file
+            );
+          } catch (createErr) {
+            // If already exists, delete then re-create
+            if (createErr.response && createErr.response.status === 409) {
+              this.logger.warn(`File ${stableFileId} already exists; removing first`);
+              await storage.deleteFile(process.env.APPWRITE_OTA_BUCKET_ID, stableFileId);
+              await storage.createFile(
+                process.env.APPWRITE_OTA_BUCKET_ID,
+                stableFileId,
+                file
+              );
+            } else {
+              throw createErr;
+            }
+          }
+
+          // Update cache
           this.otaPackHashCache.set(cacheKey, contentHash);
-          
           uploadResults[fileName] = stableFileId;
-          this.logger.log(`✅ Successfully uploaded ${customFileName} with stable file ID ${stableFileId}`);
-        } catch (uploadError) {
-          this.logger.error(`❌ Failed to upload ${customFileName}: ${uploadError.message}`);
-          throw uploadError; // Re-throw to handle it at the method level
+          this.logger.log(`Uploaded ${fileName} -> ID: ${stableFileId}`);
+        } catch (err) {
+          this.logger.error(`Failed to handle file ${fileName}: ${err.message}`);
+          throw new Error(`Upload failed for ${fileName}: ${err.message}`);
         }
-      } catch (error) {
-        this.logger.error(`Error processing ${fileName}: ${error.message}`);
-        throw new Error(`Failed to upload OTA pack ${fileName}: ${error.message}`);
+      });
+    }
+
+    // Run uploads with concurrency limit
+    await this.runConcurrently(uploadQueue, concurrencyLimit);
+    this.logger.log(`Completed OTA pack uploads: ${JSON.stringify(uploadResults)}`);
+    return uploadResults;
+  }
+
+  // Helper for concurrency-limited tasks
+  private async runConcurrently(tasks: Array<() => Promise<void>>, limit: number) {
+    const active: Promise<void>[] = [];
+    for (const task of tasks) {
+      const promise = task().finally(() => {
+        // Remove completed from active
+        active.splice(active.indexOf(promise), 1);
+      });
+      active.push(promise);
+      if (active.length >= limit) {
+        await Promise.race(active);
       }
     }
-    
-    this.logger.log(`Completed OTA pack uploads. Results: ${JSON.stringify(uploadResults)}`);
-    return uploadResults;
+    await Promise.all(active);
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
