@@ -5,24 +5,37 @@ import axios from 'axios';
 import * as QRCode from 'qrcode';
 import { Client, Query, Storage } from 'node-appwrite';
 import * as AdmZip from 'adm-zip'; // Add this import
+import * as crypto from 'crypto';
 
 @Injectable()
 export class AppGenerationService {
   private readonly logger = new Logger(AppGenerationService.name);
+  private otaPackHashCache = new Map<string, string>(); // Cache for OTA pack content hashes
 
   /**
    * Generates or updates the Flutter app.
    * @param fullAppData The full configuration data for the app.
    * @param updateOnlyOta If true, only update OTA packs without triggering a full rebuild.
+   * @param forceRebuild If true, force a rebuild even when an APK already exists.
    */
-  async generateOrUpdateFlutterApp(fullAppData: any, updateOnlyOta: boolean = false): Promise<any> {
+  async generateOrUpdateFlutterApp(
+    fullAppData: any, 
+    updateOnlyOta: boolean = false,
+    forceRebuild: boolean = false
+  ): Promise<any> {
     try {
       // Step 1: Determine appId and setup working directories.
       const appId = fullAppData.mobileApp?._id ? String(fullAppData.mobileApp._id) : 'no_id';
       const workingDir = path.join('C:\\Users\\WT\\Desktop\\PFE PROJECT\\flutter_builds', appId);
       const globalTemplateDir = path.join('C:\\Users\\WT\\Desktop\\PFE PROJECT\\flutter_template');
 
-      this.logger.log(`Starting app generation for appId: ${appId}`);
+      // Get repository information - fix property access
+      const repositoryInfo = fullAppData.repository || {};
+      const appName = repositoryInfo.repositoryName || repositoryInfo.name || fullAppData.mobileApp?.name || 'My Generated App';
+      const appLogo = repositoryInfo.image || null;
+
+      this.logger.log(`Starting app generation for appId: ${appId}, name: ${appName}`);
+      this.logger.log(`Update only OTA: ${updateOnlyOta}, Force rebuild: ${forceRebuild}`);
 
       // Step 2: Ensure Flutter template exists.
       if (!fs.existsSync(globalTemplateDir)) {
@@ -59,9 +72,24 @@ export class AppGenerationService {
         })
       );
 
-      // Step 5.1: Upload OTA packs to Appwrite.
-      // Pass appId so we can include it in the file name.
-      const otaUploads = await this.uploadOtaPacksToCloud(workingDir, appId);
+      // Check if APK already exists in Appwrite before deciding on the update approach
+      const existingApkFileId = await this.checkExistingApk(appId);
+      
+      // If forceRebuild is true, delete the existing APK
+      if (forceRebuild && existingApkFileId) {
+        await this.deleteExistingApk(existingApkFileId);
+        this.logger.log(`Force rebuild requested. Deleted existing APK with ID: ${existingApkFileId}`);
+      }
+      
+      // Determine if we should update OTA only, based on:
+      // 1. The updateOnlyOta flag
+      // 2. The existence of an APK
+      // 3. The forceRebuild flag (which overrides both)
+      const shouldUpdateOtaOnly = (updateOnlyOta || existingApkFileId !== null) && !forceRebuild;
+
+      // Step 5.1: Upload OTA packs to Appwrite with content-based optimization
+      // Pass true to force update and bypass cache when force rebuild is requested
+      const otaUploads = await this.uploadOtaPacksToCloud(workingDir, appId, forceRebuild);
       this.logger.log(`OTA packs uploaded to cloud: ${JSON.stringify(otaUploads)}`);
 
       // Step 5.2: Generate OTA endpoints in the required format.
@@ -74,20 +102,28 @@ export class AppGenerationService {
       this.updatePubspecYaml(workingDir);
       this.logger.log('Updated pubspec.yaml with OTA assets');
 
-      // If updateOnlyOta is true and an APK already exists, skip triggering the build workflow.
-      if (updateOnlyOta) {
-        // Optionally, check if the APK exists.
-        const apkPath = path.join(workingDir, 'build', 'app', 'outputs', 'apk', 'release', 'app-release.apk');
-        let existingApkUrl = '';
-        if (fs.existsSync(apkPath)) {
-          // In a real scenario, you would retrieve the actual APK URL (e.g., stored in a database)
-          existingApkUrl = 'existing_apk_url'; // Placeholder value.
+      // If APK already exists or updateOnlyOta is true, skip rebuild and return existing APK info
+      if (shouldUpdateOtaOnly) {
+        let apkDownloadUrl = null;
+        let publicDownloadUrl = null;
+        let qrCodeDataUrl = null;
+
+        if (existingApkFileId) {
+          // Generate APK URLs since we already have an APK file
+          apkDownloadUrl = `${process.env.APPWRITE_ENDPOINT}/storage/buckets/${process.env.APPWRITE_APK_BUCKET_ID}/files/${existingApkFileId}/download?project=${process.env.APPWRITE_PROJECT_ID}&mode=admin`;
+          publicDownloadUrl = `${process.env.APPWRITE_ENDPOINT}/storage/buckets/${process.env.APPWRITE_APK_BUCKET_ID}/files/${existingApkFileId}/download?project=${process.env.APPWRITE_PROJECT_ID}`;
+          qrCodeDataUrl = await QRCode.toDataURL(publicDownloadUrl);
         }
+
+        this.logger.log(`OTA packs updated. Using existing APK: ${existingApkFileId !== null}`);
+
         return {
           success: true,
           message: 'OTA packs updated. No rebuild triggered as APK already exists.',
-          appName: fullAppData.mobileApp?.name || 'My Generated App',
-          apkUrl: existingApkUrl,
+          appName: appName,
+          appLogo: appLogo,
+          apkUrl: apkDownloadUrl,
+          qrCodeDataUrl,
           otaPacks: Object.fromEntries(
             Object.keys(otaPacks).map((packName) => [
               packName,
@@ -101,9 +137,10 @@ export class AppGenerationService {
         };
       }
 
+      // Continue with full rebuild flow if no existing APK or force rebuild requested
       // Step 7: Trigger GitHub Actions workflow to build the app.
-      await this.triggerBuildWorkflow(fullAppData);
-      this.logger.log("GitHub Actions workflow triggered");
+      await this.triggerBuildWorkflow(fullAppData, otaEndpoints);
+      this.logger.log("GitHub Actions workflow triggered with OTA endpoints");
 
       // Step 8: Track workflow until completion (to ensure build is done).
       const githubArtifact = await this.trackWorkflow(appId);
@@ -113,21 +150,26 @@ export class AppGenerationService {
       const apkFileId = await this.downloadAndUploadApkToAppwrite(githubArtifact, appId);
       this.logger.log(`APK uploaded to Appwrite with file ID: ${apkFileId}`);
 
-      // Generate APK download URL.
+      // Generate APK download URL for internal use with admin privileges
       const apkDownloadUrl = `${process.env.APPWRITE_ENDPOINT}/storage/buckets/${process.env.APPWRITE_APK_BUCKET_ID}/files/${apkFileId}/download?project=${process.env.APPWRITE_PROJECT_ID}&mode=admin`;
-      this.logger.log(`APK download URL: ${apkDownloadUrl}`);
+      this.logger.log(`APK download URL (admin): ${apkDownloadUrl}`);
+      
+      // Generate a public download URL for the QR code, which doesn't require authentication
+      const publicDownloadUrl = `${process.env.APPWRITE_ENDPOINT}/storage/buckets/${process.env.APPWRITE_APK_BUCKET_ID}/files/${apkFileId}/download?project=${process.env.APPWRITE_PROJECT_ID}`;
+      this.logger.log(`APK public download URL: ${publicDownloadUrl}`);
 
-      // Step 9: Generate QR code for the APK download URL.
-      const qrCodeDataUrl = await QRCode.toDataURL(apkDownloadUrl);
-      this.logger.log("QR Code generated for APK download URL");
+      // Step 9: Generate QR code for the public APK download URL
+      const qrCodeDataUrl = await QRCode.toDataURL(publicDownloadUrl);
+      this.logger.log("QR Code generated for public APK download URL");
 
       // Step 10: Return build result with OTA pack details, live endpoints, and APK download info.
-      return {
+      const resultData = {
         success: true,
         message: isNewApp
           ? 'Flutter app creation triggered and build completed successfully'
           : 'Flutter app update triggered and build completed successfully',
-        appName: fullAppData.mobileApp?.name || 'My Generated App',
+        appName: appName,
+        appLogo: appLogo,
         apkUrl: apkDownloadUrl,
         qrCodeDataUrl,
         otaPacks: Object.fromEntries(
@@ -141,21 +183,84 @@ export class AppGenerationService {
           ])
         ),
       };
+
+      // Log the result without the QR code data to avoid console clutter
+      this.logger.log(`Build result: ${JSON.stringify({...resultData, qrCodeDataUrl: '[QR Code data omitted for brevity]'})}`);
+      return resultData;
     } catch (error) {
       this.logger.error(`Error generating/updating Flutter app: ${error.message}`);
       throw error;
     }
   }
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Upload OTA packs to Appwrite cloud storage with mobileAppId included in the file name.
-  async uploadOtaPacksToCloud(workingDir: string, mobileAppId: string): Promise<Record<string, string>> {
+  // New method to check if APK already exists in Appwrite
+  async checkExistingApk(mobileAppId: string): Promise<string | null> {
+    try {
+      // Initialize Appwrite client
+      const client = new Client();
+      client
+        .setEndpoint(process.env.APPWRITE_ENDPOINT)
+        .setProject(process.env.APPWRITE_PROJECT_ID)
+        .setKey(process.env.APPWRITE_API_KEY);
+      
+      const storage = new Storage(client);
+      const customZipPattern = `${mobileAppId}_flutter-apks.zip`;
+      
+      // List files that match our naming pattern
+      const existingFiles = await storage.listFiles(process.env.APPWRITE_APK_BUCKET_ID, [
+        Query.equal("name", customZipPattern)
+      ]);
+      
+      // If we found any matching files, return the first one's ID
+      if (existingFiles.files && existingFiles.files.length > 0) {
+        this.logger.log(`Found existing APK for app ${mobileAppId}: ${existingFiles.files[0].$id}`);
+        return existingFiles.files[0].$id;
+      }
+      
+      this.logger.log(`No existing APK found for app ${mobileAppId}`);
+      return null;
+    } catch (error) {
+      this.logger.error(`Error checking for existing APK: ${error.message}`);
+      return null; // Return null on error to be safe (will trigger a rebuild)
+    }
+  }
+
+  // New method to delete an existing APK file
+  async deleteExistingApk(fileId: string): Promise<void> {
+    try {
+      // Initialize Appwrite client
+      const client = new Client();
+      client
+        .setEndpoint(process.env.APPWRITE_ENDPOINT)
+        .setProject(process.env.APPWRITE_PROJECT_ID)
+        .setKey(process.env.APPWRITE_API_KEY);
+      
+      const storage = new Storage(client);
+      
+      // Delete the file
+      await storage.deleteFile(process.env.APPWRITE_APK_BUCKET_ID, fileId);
+      this.logger.log(`Successfully deleted APK file with ID: ${fileId}`);
+    } catch (error) {
+      this.logger.error(`Error deleting APK file: ${error.message}`);
+      // Don't throw the error to avoid blocking the build process
+    }
+  }
+
+  // Enhanced version of uploadOtaPacksToCloud with better error handling and cache management
+  async uploadOtaPacksToCloud(
+    workingDir: string, 
+    mobileAppId: string, 
+    forceUpdate: boolean = false
+  ): Promise<Record<string, string>> {
     const packsDir = path.join(workingDir, 'assets', 'ota_packs');
     const files = fs.readdirSync(packsDir);
     if (files.length === 0) {
       this.logger.error(`No OTA pack files found in ${packsDir}`);
       throw new Error(`No OTA pack files found in ${packsDir}`);
     }
+    
+    this.logger.log(`Starting OTA pack upload for ${files.length} files, force update: ${forceUpdate}`);
+    
     // Initialize Appwrite client.
     const client = new Client();
     client
@@ -166,45 +271,122 @@ export class AppGenerationService {
     const uploadResults: Record<string, string> = {};
   
     for (const fileName of files) {
+      // Skip endpoints.json, we'll generate it later
+      if (fileName === 'endpoints.json') continue;
+      
       const filePath = path.join(packsDir, fileName);
       // Generate a custom file name that includes mobileAppId.
       const customFileName = `${mobileAppId}_${fileName}`;
+      
       try {
-        // List existing files with this custom name using proper query syntax.
-        const existingFiles = await storage.listFiles(process.env.APPWRITE_OTA_BUCKET_ID, [
-          Query.equal("name", customFileName)
-        ]);
-        if (existingFiles.files && existingFiles.files.length > 0) {
-          // Delete all matching files.
-          for (const existingFile of existingFiles.files) {
-            await storage.deleteFile(process.env.APPWRITE_OTA_BUCKET_ID, existingFile.$id);
-            this.logger.log(`Deleted old OTA file ${existingFile.$id} with name ${customFileName}`);
+        // Read the file content and calculate hash
+        const fileContent = fs.readFileSync(filePath, 'utf8');
+        const contentHash = crypto.createHash('md5').update(fileContent).digest('hex');
+        const cacheKey = `${mobileAppId}_${fileName}`;
+        this.logger.log(`Processing file: ${fileName}, content hash: ${contentHash}`);
+        
+        // Check if file content has changed since last upload (skip if forceUpdate is true)
+        if (!forceUpdate && this.otaPackHashCache.get(cacheKey) === contentHash) {
+          // Content hasn't changed, find the existing file ID
+          this.logger.log(`Content hash match found in cache for ${fileName}`);
+          
+          try {
+            const existingFiles = await storage.listFiles(process.env.APPWRITE_OTA_BUCKET_ID, [
+              Query.equal("name", customFileName)
+            ]);
+            
+            if (existingFiles?.files && existingFiles.files.length > 0) {
+              const existingFileId = existingFiles.files[0].$id;
+              uploadResults[fileName] = existingFileId;
+              this.logger.log(`Content unchanged for ${fileName}, reusing existing file ${existingFileId}`);
+              
+              // Verify the file actually exists with a view request
+              try {
+                await storage.getFileView(process.env.APPWRITE_OTA_BUCKET_ID, existingFileId);
+                this.logger.log(`Verified file ${existingFileId} exists in Appwrite`);
+                continue; // Skip to the next file
+              } catch (viewError) {
+                this.logger.warn(`File ${existingFileId} couldn't be viewed in Appwrite, will re-upload. Error: ${viewError.message}`);
+                // Fall through to upload the file again
+              }
+            } else {
+              this.logger.warn(`Hash match found in cache but no matching file found in Appwrite for ${customFileName}`);
+            }
+          } catch (listError) {
+            this.logger.error(`Error listing existing files: ${listError.message}`);
+            // Continue to upload the file as fallback
           }
         }
-        // Read the file as a Buffer.
-        const fileBuffer = fs.readFileSync(filePath);
-        const blob = new Blob([fileBuffer]);
-        const file = new File([blob], customFileName, { type: 'application/json' });
-        // Upload the file with a unique ID.
-        const response = await storage.createFile(
-          process.env.APPWRITE_OTA_BUCKET_ID,
-          'unique()', // Let Appwrite generate a unique file ID.
-          file
-        );
-        uploadResults[fileName] = response.$id;
-        this.logger.log(`Uploaded ${customFileName} with file ID ${response.$id}`);
+        
+        // Content has changed, force update is requested, or file doesn't exist - proceed with upload
+        this.logger.log(`Preparing to upload ${fileName} (force update: ${forceUpdate})`);
+        
+        try {
+          // List existing files with this custom name
+          const existingFiles = await storage.listFiles(process.env.APPWRITE_OTA_BUCKET_ID, [
+            Query.equal("name", customFileName)
+          ]);
+          
+          if (existingFiles?.files && existingFiles.files.length > 0) {
+            // Delete all matching files.
+            for (const existingFile of existingFiles.files) {
+              try {
+                await storage.deleteFile(process.env.APPWRITE_OTA_BUCKET_ID, existingFile.$id);
+                this.logger.log(`Deleted old OTA file ${existingFile.$id} with name ${customFileName}`);
+              } catch (deleteError) {
+                this.logger.error(`Failed to delete existing file ${existingFile.$id}: ${deleteError.message}`);
+                // Continue anyway to try uploading the new version
+              }
+            }
+          }
+        } catch (listError) {
+          this.logger.error(`Error checking for existing files before upload: ${listError.message}`);
+          // Continue to upload anyway as a fallback
+        }
+        
+        try {
+          // Create a Blob and File from the content
+          const blob = new Blob([fileContent], { type: 'application/json' });
+          const file = new File([blob], customFileName, { type: 'application/json' });
+          
+          // Upload the file with a unique ID.
+          this.logger.log(`Uploading ${customFileName} to Appwrite...`);
+          const response = await storage.createFile(
+            process.env.APPWRITE_OTA_BUCKET_ID,
+            'unique()', // Let Appwrite generate a unique file ID.
+            file
+          );
+          
+          if (!response || !response.$id) {
+            throw new Error('Upload response from Appwrite is missing file ID');
+          }
+          
+          // Verify the file was uploaded correctly by fetching a preview
+          await storage.getFileView(process.env.APPWRITE_OTA_BUCKET_ID, response.$id);
+          
+          // Update our cache with the new content hash
+          this.otaPackHashCache.set(cacheKey, contentHash);
+          
+          uploadResults[fileName] = response.$id;
+          this.logger.log(`✅ Successfully uploaded ${customFileName} with file ID ${response.$id}`);
+        } catch (uploadError) {
+          this.logger.error(`❌ Failed to upload ${customFileName}: ${uploadError.message}`);
+          throw uploadError; // Re-throw to handle it at the method level
+        }
       } catch (error) {
-        this.logger.error(`Error uploading ${fileName}: ${error.message}`);
-        throw error;
+        this.logger.error(`Error processing ${fileName}: ${error.message}`);
+        throw new Error(`Failed to upload OTA pack ${fileName}: ${error.message}`);
       }
     }
+    
+    this.logger.log(`Completed OTA pack uploads. Results: ${JSON.stringify(uploadResults)}`);
     return uploadResults;
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Upload the APK file to Appwrite and return its file ID.
   // ─────────────────────────────────────────────────────────────────────────────
-  // Download GitHub artifact, extract APK, and upload to Appwrite
+  // Download GitHub artifact and upload to Appwrite as is, without extraction
   async downloadAndUploadApkToAppwrite(githubArtifact: any, mobileAppId: string): Promise<string> {
     const artifactId = githubArtifact.id;
     // Correct API URL format for downloading artifacts
@@ -227,27 +409,7 @@ export class AppGenerationService {
         responseType: 'arraybuffer'
       });
       
-      // Process the downloaded zip file in memory
-      const zip = new AdmZip(Buffer.from(response.data));
-      const zipEntries = zip.getEntries();
-      
-      // Find the APK file in the zip
-      let apkEntry = null;
-      for (const entry of zipEntries) {
-        if (entry.entryName.endsWith('.apk')) {
-          apkEntry = entry;
-          break;
-        }
-      }
-      
-      if (!apkEntry) {
-        throw new Error('No APK file found in the artifact!');
-      }
-      
-      this.logger.log(`Found APK in artifact: ${apkEntry.entryName}`);
-      
-      // Extract APK data to a buffer
-      const apkBuffer = apkEntry.getData();
+      this.logger.log(`Downloaded artifact zip file, size: ${response.data.byteLength} bytes`);
       
       // Initialize Appwrite client
       const client = new Client();
@@ -258,35 +420,34 @@ export class AppGenerationService {
       
       const storage = new Storage(client);
       // Generate a custom file name that includes mobileAppId
-      const customApkName = `${mobileAppId}_app-release.apk`;
+      const customZipName = `${mobileAppId}_flutter-apks.zip`;
       
-      // List and delete any existing files with the same custom name
+      // List and delete any existing files with the same name
       const existingFiles = await storage.listFiles(process.env.APPWRITE_APK_BUCKET_ID, [
-        Query.equal("name", customApkName)
+        Query.equal("name", customZipName)
       ]);
       
       if (existingFiles.files && existingFiles.files.length > 0) {
         for (const existingFile of existingFiles.files) {
           await storage.deleteFile(process.env.APPWRITE_APK_BUCKET_ID, existingFile.$id);
-          this.logger.log(`Deleted old APK file ${existingFile.$id} with name ${customApkName}`);
+          this.logger.log(`Deleted old zip file ${existingFile.$id} with name ${customZipName}`);
         }
       }
       
-      // Create a Blob and File object from the APK buffer
-      const blob = new Blob([apkBuffer], { type: 'application/vnd.android.package-archive' });
-      const file = new File([blob], customApkName, { type: 'application/vnd.android.package-archive' });
+      // Upload the artifact zip as is without extraction
+      const blob = new Blob([response.data], { type: 'application/zip' });
+      const file = new File([blob], customZipName, { type: 'application/zip' });
       
-      // Upload the file to Appwrite
       const uploadResponse = await storage.createFile(
         process.env.APPWRITE_APK_BUCKET_ID,
         'unique()', // Let Appwrite generate a unique file ID
         file
       );
       
-      this.logger.log(`Successfully uploaded APK to Appwrite with file ID: ${uploadResponse.$id}`);
+      this.logger.log(`Successfully uploaded artifact zip to Appwrite with file ID: ${uploadResponse.$id}`);
       return uploadResponse.$id;
     } catch (error) {
-      this.logger.error(`Failed to download and upload APK: ${error.message}`);
+      this.logger.error(`Failed to download and upload artifact: ${error.message}`);
       if (error.response) {
         this.logger.error(`Response status: ${error.response.status}`);
         this.logger.error(`Response data: ${JSON.stringify(error.response.data)}`);
@@ -299,12 +460,19 @@ export class AppGenerationService {
   // Generate OTA endpoints using the real URL format.
   private generateOtaEndpoints(otaUploads: Record<string, string>): Record<string, string> {
     const endpoints: Record<string, string> = {};
+    
     for (const fileName in otaUploads) {
       const fileId = otaUploads[fileName];
       // Remove the '_pack.json' suffix to use a clean key.
       const key = fileName.replace('_pack.json', '');
-      endpoints[key] = `${process.env.APPWRITE_ENDPOINT}/storage/buckets/${process.env.APPWRITE_OTA_BUCKET_ID}/files/${fileId}/view?project=${process.env.APPWRITE_PROJECT_ID}&mode=admin`;
+      
+      // Use a URL format that's accessible and returns the raw file contents
+      endpoints[key] = `${process.env.APPWRITE_ENDPOINT}/storage/buckets/${process.env.APPWRITE_OTA_BUCKET_ID}/files/${fileId}/view?project=${process.env.APPWRITE_PROJECT_ID}`;
     }
+    
+    // Log the generated endpoints for debugging
+    this.logger.log(`Generated OTA endpoints: ${JSON.stringify(endpoints)}`);
+    
     return endpoints;
   }
 
@@ -403,7 +571,10 @@ export class AppGenerationService {
     this.logger.log(`Updating app (${appId}) with APK URL: ${apkUrl}`);
     const qrCodeDataUrl = await QRCode.toDataURL(apkUrl);
     this.logger.log(`QR Code generated for APK URL`);
-    return { success: true, appId, apkUrl, qrCodeDataUrl };
+    const result = { success: true, appId, apkUrl, qrCodeDataUrl };
+    // Log without the QR code
+    this.logger.log(`Result: ${JSON.stringify({...result, qrCodeDataUrl: '[QR Code data omitted for brevity]'})}`);
+    return result;
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -414,11 +585,23 @@ export class AppGenerationService {
     packs.layout = fullAppData.appLayout || {};
     packs.screens = fullAppData.screens || [];
     packs.onboarding = fullAppData.onboardingScreens || [];
+    
     const mobileApp = fullAppData.mobileApp || {};
+    // Include repository information in the config pack
+    const repository = fullAppData.repository || {};
+    
+    this.logger.log(`Repository info for OTA packs: ${JSON.stringify(repository)}`);
+    
+    // Create a comprehensive config object with correct property access
     packs.config = {
-      ...mobileApp,
+      appName: repository.repositoryName || mobileApp.name || 'My Generated App',
       _id: mobileApp._id ? String(mobileApp._id) : undefined,
+      repositoryName: repository.repositoryName || mobileApp.name || 'My App',
+      repositoryImage: repository.image || null,
+      repositoryDescription: repository.description || null,
+      coverImage: repository.coverImage || null,
     };
+    
     return packs;
   }
 
@@ -463,12 +646,13 @@ export class AppGenerationService {
         const assetConfig = `
 flutter:
   assets:
+    - assets/config.json
+    - assets/ota_packs/endpoints.json
     - assets/ota_packs/design_pack.json
     - assets/ota_packs/layout_pack.json
     - assets/ota_packs/screens_pack.json
     - assets/ota_packs/onboarding_pack.json
     - assets/ota_packs/config_pack.json
-    - assets/ota_packs/endpoints.json
 `;
         pubspecContent = pubspecContent.replace(/(flutter:\s*)/, `$1\n${assetConfig}`);
         fs.writeFileSync(pubspecPath, pubspecContent, 'utf8');
@@ -476,10 +660,9 @@ flutter:
       }
     }
   }
-
   // ─────────────────────────────────────────────────────────────────────────────
   // Trigger the GitHub Actions workflow via repository_dispatch.
-  private async triggerBuildWorkflow(configPayload: any): Promise<void> {
+  private async triggerBuildWorkflow(configPayload: any, otaEndpoints: any): Promise<void> {
     const token = process.env.GITHUB_TOKEN || 'YOUR_GITHUB_PERSONAL_ACCESS_TOKEN';
     if (!token) {
       this.logger.error('❌ GITHUB_TOKEN is missing!');
@@ -489,24 +672,112 @@ flutter:
     const repoName = 'flutter_template';
     const githubApiUrl = `https://api.github.com/repos/${repoOwner}/${repoName}/dispatches`;
     try {
-      this.logger.log(`🚀 Sending request to GitHub Actions: ${githubApiUrl}`);
-      const response = await axios.post(
-        githubApiUrl,
-        {
-          event_type: 'build_app',
-          client_payload: { config: configPayload },
-        },
-        {
-          headers: {
-            Accept: 'application/vnd.github.v3+json',
-            Authorization: `token ${token}`,
-          },
+      // Extract repository info with better logging
+      const repository = configPayload.repository || {};
+      this.logger.log(`Repository info for build: ${JSON.stringify(repository)}`);
+      
+      // Extract app name from repository with correct property access
+      const appName = repository.repositoryName || configPayload.mobileApp?.name || 'My Generated App';
+      
+      // Create a valid Dart package name (lowercase, alphanumeric with underscores, start with letter)
+      const packageName = appName
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_') // Replace any non-alphanumeric chars with underscore
+        .replace(/^[^a-z]+/, 'app'); // Ensure starts with a letter
+      
+      // Create a more comprehensive configuration that includes what the app needs
+      const completeConfig = {
+        appId: configPayload.mobileApp?._id ? String(configPayload.mobileApp._id) : null,
+        appName: appName,
+        packageName: packageName,
+        appDescription: repository.description || '',
+        appVersion: '1.0.0',
+        buildNumber: '1',
+        endpointsUrl: null
+      };
+      
+      const appLogo = repository.image || null;
+      
+      this.logger.log(`Using app name: ${appName}, package name: ${packageName}`);
+      this.logger.log(`Repository details - name: "${repository.repositoryName}", description: "${repository.description}", image: ${repository.image ? "Present" : "Not present"}`);
+      
+      // Validate otaEndpoints to ensure they're in the expected format
+      if (!otaEndpoints || typeof otaEndpoints !== 'object') {
+        this.logger.warn('OTA endpoints may not be in the correct format');
+      }
+      
+      // Prepare the payload
+      const payload = {
+        event_type: 'build_app',
+        client_payload: { 
+          config: completeConfig,
+          otaEndpoints: otaEndpoints,
+          appName: appName,
+          packageName: packageName,
+          appLogo: appLogo,
+          repository: {
+            name: repository.repositoryName || '',
+            image: repository.image || '',
+            description: repository.description || '',
+            coverImage: repository.coverImage || ''
+          }
         }
-      );
-      this.logger.log(`✅ GitHub Actions Triggered! Response: ${response.status}`);
+      };
+      
+      // Log the payload for debugging - remove sensitive data if needed
+      this.logger.log(`GitHub dispatch payload prepared: ${JSON.stringify({
+        ...payload,
+        client_payload: {
+          ...payload.client_payload,
+          appLogo: payload.client_payload.appLogo ? "[Image data present]" : null,
+          repository: {
+            ...payload.client_payload.repository,
+            image: payload.client_payload.repository.image ? "[Image data present]" : null,
+            coverImage: payload.client_payload.repository.coverImage ? "[Image data present]" : null,
+          }
+        }
+      })}`);
+      
+      try {
+        const response = await axios.post(
+          githubApiUrl,
+          payload,
+          {
+            headers: {
+              Accept: 'application/vnd.github.v3+json',
+              Authorization: `token ${token}`,
+            },
+          }
+        );
+        this.logger.log(`✅ GitHub Actions Triggered! Response: ${response.status}`);
+      } catch (axiosError) {
+        // Enhanced error handling to extract more details from the GitHub API response
+        if (axiosError.response) {
+          this.logger.error(`GitHub API error - Status: ${axiosError.response.status}`);
+          this.logger.error(`Response data: ${JSON.stringify(axiosError.response.data)}`);
+          this.logger.error(`Response headers: ${JSON.stringify(axiosError.response.headers)}`);
+          
+          // Check for specific GitHub error messages
+          if (axiosError.response.data && axiosError.response.data.message) {
+            if (axiosError.response.data.message.includes('OAuth')) {
+              throw new Error(`GitHub authentication error: ${axiosError.response.data.message}. Please check your token permissions.`);
+            } else if (axiosError.response.data.message.includes('Not Found')) {
+              throw new Error(`Repository not found: ${repoOwner}/${repoName}. Please verify the repository exists and your token has access.`);
+            } else if (axiosError.response.data.errors && axiosError.response.data.errors.length > 0) {
+              // Extract the specific validation errors
+              const errorDetails = axiosError.response.data.errors.map(e => e.message).join('; ');
+              throw new Error(`GitHub API validation error: ${errorDetails}`);
+            }
+          }
+        }
+        
+        // Generic error if none of the specific cases matched
+        throw new Error(`GitHub API request failed: ${axiosError.message}`);
+      }
     } catch (error) {
       this.logger.error(`❌ Failed to trigger GitHub Actions: ${error.message}`);
       throw error;
     }
   }
+
 }

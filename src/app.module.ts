@@ -13,6 +13,7 @@ import { OnboardingScreensModule } from './modules/onboarding-screens/onboarding
 import { ImagesModule } from './modules/images/images.module';
 import { WidgetModule } from './modules/widget/widget.module';
 import { WidgetScreenModule } from './modules/widgetscreen/widgetscreen.module';
+import { ImageKitService } from './shared/imagekit.service';
 
 @Module({
   imports: [
@@ -29,6 +30,6 @@ import { WidgetScreenModule } from './modules/widgetscreen/widgetscreen.module';
     WidgetModule,
     WidgetScreenModule,
   ],
-  providers: [LiveUpdatesGateway],
+  providers: [LiveUpdatesGateway, ImageKitService],
 })
 export class AppModule {}
