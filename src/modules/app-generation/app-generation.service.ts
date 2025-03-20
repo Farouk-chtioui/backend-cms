@@ -4,7 +4,7 @@ import * as path from 'path';
 import axios from 'axios';
 import * as QRCode from 'qrcode';
 import { Client, Query, Storage } from 'node-appwrite';
-import * as AdmZip from 'adm-zip'; // Add this import
+import * as AdmZip from 'adm-zip';
 import * as crypto from 'crypto';
 
 @Injectable()
@@ -97,6 +97,42 @@ export class AppGenerationService {
       const endpointsFilePath = path.join(workingDir, 'assets', 'ota_packs', 'endpoints.json');
       await fs.promises.writeFile(endpointsFilePath, JSON.stringify(otaEndpoints, null, 2), 'utf8');
       this.logger.log(`OTA endpoints written to ${endpointsFilePath}`);
+
+      // ───────────────────────────────────────────────
+      // NEW: Upload updated endpoints.json to Appwrite OTA bucket
+      try {
+        const client = new Client();
+        client
+          .setEndpoint(process.env.APPWRITE_ENDPOINT)
+          .setProject(process.env.APPWRITE_PROJECT_ID)
+          .setKey(process.env.APPWRITE_API_KEY);
+        const storage = new Storage(client);
+        const customEndpointsFileName = `${appId}_endpoints.json`;
+        // Delete any existing endpoints file
+        const existingEndpoints = await storage.listFiles(process.env.APPWRITE_OTA_BUCKET_ID, [
+          Query.equal("name", customEndpointsFileName)
+        ]);
+        if (existingEndpoints.files && existingEndpoints.files.length > 0) {
+          for (const file of existingEndpoints.files) {
+            await storage.deleteFile(process.env.APPWRITE_OTA_BUCKET_ID, file.$id);
+            this.logger.log(`Deleted existing endpoints file with ID ${file.$id}`);
+          }
+        }
+        const endpointsContent = await fs.promises.readFile(endpointsFilePath);
+        const blob = new Blob([endpointsContent], { type: 'application/json' });
+        const endpointsFile = new File([blob], customEndpointsFileName, { type: 'application/json' });
+        const endpointsUploadResponse = await storage.createFile(
+          process.env.APPWRITE_OTA_BUCKET_ID,
+          'unique()',
+          endpointsFile
+        );
+        this.logger.log(`Uploaded endpoints file to Appwrite with ID: ${endpointsUploadResponse.$id}`);
+        // Optionally, update a global endpoint in otaEndpoints for reference
+        otaEndpoints['global'] = `${process.env.APPWRITE_ENDPOINT}/storage/buckets/${process.env.APPWRITE_OTA_BUCKET_ID}/files/${endpointsUploadResponse.$id}/view?project=${process.env.APPWRITE_PROJECT_ID}`;
+      } catch (err) {
+        this.logger.error(`Failed to update endpoints file in Appwrite: ${err.message}`);
+      }
+      // ───────────────────────────────────────────────
 
       // Step 6: Update pubspec.yaml to include OTA assets.
       this.updatePubspecYaml(workingDir);
@@ -384,8 +420,6 @@ export class AppGenerationService {
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // Upload the APK file to Appwrite and return its file ID.
-  // ─────────────────────────────────────────────────────────────────────────────
   // Download GitHub artifact and upload to Appwrite as is, without extraction
   async downloadAndUploadApkToAppwrite(githubArtifact: any, mobileAppId: string): Promise<string> {
     const artifactId = githubArtifact.id;
@@ -660,6 +694,7 @@ flutter:
       }
     }
   }
+
   // ─────────────────────────────────────────────────────────────────────────────
   // Trigger the GitHub Actions workflow via repository_dispatch.
   private async triggerBuildWorkflow(configPayload: any, otaEndpoints: any): Promise<void> {
@@ -751,27 +786,21 @@ flutter:
         );
         this.logger.log(`✅ GitHub Actions Triggered! Response: ${response.status}`);
       } catch (axiosError) {
-        // Enhanced error handling to extract more details from the GitHub API response
         if (axiosError.response) {
           this.logger.error(`GitHub API error - Status: ${axiosError.response.status}`);
           this.logger.error(`Response data: ${JSON.stringify(axiosError.response.data)}`);
           this.logger.error(`Response headers: ${JSON.stringify(axiosError.response.headers)}`);
-          
-          // Check for specific GitHub error messages
           if (axiosError.response.data && axiosError.response.data.message) {
             if (axiosError.response.data.message.includes('OAuth')) {
               throw new Error(`GitHub authentication error: ${axiosError.response.data.message}. Please check your token permissions.`);
             } else if (axiosError.response.data.message.includes('Not Found')) {
               throw new Error(`Repository not found: ${repoOwner}/${repoName}. Please verify the repository exists and your token has access.`);
             } else if (axiosError.response.data.errors && axiosError.response.data.errors.length > 0) {
-              // Extract the specific validation errors
               const errorDetails = axiosError.response.data.errors.map(e => e.message).join('; ');
               throw new Error(`GitHub API validation error: ${errorDetails}`);
             }
           }
         }
-        
-        // Generic error if none of the specific cases matched
         throw new Error(`GitHub API request failed: ${axiosError.message}`);
       }
     } catch (error) {
@@ -779,5 +808,4 @@ flutter:
       throw error;
     }
   }
-
 }
