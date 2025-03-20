@@ -99,7 +99,7 @@ export class AppGenerationService {
       this.logger.log(`OTA endpoints written to ${endpointsFilePath}`);
 
       // ───────────────────────────────────────────────
-      // NEW: Upload updated endpoints.json to Appwrite OTA bucket
+      // NEW: Upload updated endpoints.json to Appwrite OTA bucket using a stable file ID.
       try {
         const client = new Client();
         client
@@ -108,27 +108,33 @@ export class AppGenerationService {
           .setKey(process.env.APPWRITE_API_KEY);
         const storage = new Storage(client);
         const customEndpointsFileName = `${appId}_endpoints.json`;
-        // Delete any existing endpoints file
-        const existingEndpoints = await storage.listFiles(process.env.APPWRITE_OTA_BUCKET_ID, [
-          Query.equal("name", customEndpointsFileName)
-        ]);
-        if (existingEndpoints.files && existingEndpoints.files.length > 0) {
-          for (const file of existingEndpoints.files) {
-            await storage.deleteFile(process.env.APPWRITE_OTA_BUCKET_ID, file.$id);
-            this.logger.log(`Deleted existing endpoints file with ID ${file.$id}`);
-          }
+        // Use a stable ID for the endpoints file too
+        const shortHash = crypto.createHash('md5').update(appId).digest('hex').slice(0, 8);
+        const stableEndpointsId = `${shortHash}_endpoints`
+          .toLowerCase()
+          .replace(/[^a-z0-9._-]/g, '_')
+          .slice(0, 36);
+        
+        // Try to delete any existing file with this ID first
+        try {
+          await storage.deleteFile(process.env.APPWRITE_OTA_BUCKET_ID, stableEndpointsId);
+          this.logger.log(`Deleted existing endpoints file with ID ${stableEndpointsId}`);
+        } catch (deleteError) {
+          // It's okay if the file doesn't exist yet
+          this.logger.log(`No existing endpoints file to delete or delete failed: ${deleteError.message}`);
         }
+        
         const endpointsContent = await fs.promises.readFile(endpointsFilePath);
         const blob = new Blob([endpointsContent], { type: 'application/json' });
-        const endpointsFile = new File([blob], customEndpointsFileName, { type: 'application/json' });
+        // Create the file using the stable ID
         const endpointsUploadResponse = await storage.createFile(
           process.env.APPWRITE_OTA_BUCKET_ID,
-          'unique()',
-          endpointsFile
+          stableEndpointsId,
+          new File([blob], customEndpointsFileName, { type: 'application/json' })
         );
-        this.logger.log(`Uploaded endpoints file to Appwrite with ID: ${endpointsUploadResponse.$id}`);
-        // Optionally, update a global endpoint in otaEndpoints for reference
-        otaEndpoints['global'] = `${process.env.APPWRITE_ENDPOINT}/storage/buckets/${process.env.APPWRITE_OTA_BUCKET_ID}/files/${endpointsUploadResponse.$id}/view?project=${process.env.APPWRITE_PROJECT_ID}`;
+        this.logger.log(`Uploaded endpoints file to Appwrite with stable ID: ${stableEndpointsId}`);
+        // Update the endpoints object with a "global" key that uses the stable ID
+        otaEndpoints['global'] = `${process.env.APPWRITE_ENDPOINT}/storage/buckets/${process.env.APPWRITE_OTA_BUCKET_ID}/files/${stableEndpointsId}/view?project=${process.env.APPWRITE_PROJECT_ID}`;
       } catch (err) {
         this.logger.error(`Failed to update endpoints file in Appwrite: ${err.message}`);
       }
@@ -313,6 +319,14 @@ export class AppGenerationService {
       const filePath = path.join(packsDir, fileName);
       // Generate a custom file name that includes mobileAppId.
       const customFileName = `${mobileAppId}_${fileName}`;
+      // Create a stable and valid file ID within Appwrite's constraints
+      const shortHash = crypto.createHash('md5').update(mobileAppId).digest('hex').slice(0, 8);
+      const packType = fileName.replace('_pack.json', '');
+      // Ensure the ID is valid and under 36 chars with only allowed characters
+      const stableFileId = `${shortHash}_${packType}`
+        .toLowerCase()
+        .replace(/[^a-z0-9._-]/g, '_')
+        .slice(0, 36);
       
       try {
         // Read the file content and calculate hash
@@ -323,88 +337,54 @@ export class AppGenerationService {
         
         // Check if file content has changed since last upload (skip if forceUpdate is true)
         if (!forceUpdate && this.otaPackHashCache.get(cacheKey) === contentHash) {
-          // Content hasn't changed, find the existing file ID
+          // Content hasn't changed, we don't need to upload again
           this.logger.log(`Content hash match found in cache for ${fileName}`);
           
           try {
-            const existingFiles = await storage.listFiles(process.env.APPWRITE_OTA_BUCKET_ID, [
-              Query.equal("name", customFileName)
-            ]);
-            
-            if (existingFiles?.files && existingFiles.files.length > 0) {
-              const existingFileId = existingFiles.files[0].$id;
-              uploadResults[fileName] = existingFileId;
-              this.logger.log(`Content unchanged for ${fileName}, reusing existing file ${existingFileId}`);
-              
-              // Verify the file actually exists with a view request
-              try {
-                await storage.getFileView(process.env.APPWRITE_OTA_BUCKET_ID, existingFileId);
-                this.logger.log(`Verified file ${existingFileId} exists in Appwrite`);
-                continue; // Skip to the next file
-              } catch (viewError) {
-                this.logger.warn(`File ${existingFileId} couldn't be viewed in Appwrite, will re-upload. Error: ${viewError.message}`);
-                // Fall through to upload the file again
-              }
-            } else {
-              this.logger.warn(`Hash match found in cache but no matching file found in Appwrite for ${customFileName}`);
-            }
-          } catch (listError) {
-            this.logger.error(`Error listing existing files: ${listError.message}`);
-            // Continue to upload the file as fallback
+            // Verify the file exists by trying to view it
+            await storage.getFileView(process.env.APPWRITE_OTA_BUCKET_ID, stableFileId);
+            uploadResults[fileName] = stableFileId;
+            this.logger.log(`Content unchanged for ${fileName}, using existing file ${stableFileId}`);
+            continue; // Skip to the next file
+          } catch (viewError) {
+            this.logger.warn(`File ${stableFileId} couldn't be viewed in Appwrite, will re-upload. Error: ${viewError.message}`);
+            // Fall through to upload the file again
           }
         }
         
         // Content has changed, force update is requested, or file doesn't exist - proceed with upload
-        this.logger.log(`Preparing to upload ${fileName} (force update: ${forceUpdate})`);
+        this.logger.log(`Preparing to upload ${fileName} with stable ID: ${stableFileId}`);
         
         try {
-          // List existing files with this custom name
-          const existingFiles = await storage.listFiles(process.env.APPWRITE_OTA_BUCKET_ID, [
-            Query.equal("name", customFileName)
-          ]);
-          
-          if (existingFiles?.files && existingFiles.files.length > 0) {
-            // Delete all matching files.
-            for (const existingFile of existingFiles.files) {
-              try {
-                await storage.deleteFile(process.env.APPWRITE_OTA_BUCKET_ID, existingFile.$id);
-                this.logger.log(`Deleted old OTA file ${existingFile.$id} with name ${customFileName}`);
-              } catch (deleteError) {
-                this.logger.error(`Failed to delete existing file ${existingFile.$id}: ${deleteError.message}`);
-                // Continue anyway to try uploading the new version
-              }
-            }
+          // Try to delete any existing file with this ID first
+          try {
+            await storage.deleteFile(process.env.APPWRITE_OTA_BUCKET_ID, stableFileId);
+            this.logger.log(`Deleted existing file with ID ${stableFileId}`);
+          } catch (deleteError) {
+            // It's okay if the file doesn't exist yet
+            this.logger.log(`No existing file to delete for ID ${stableFileId} or delete failed: ${deleteError.message}`);
           }
-        } catch (listError) {
-          this.logger.error(`Error checking for existing files before upload: ${listError.message}`);
-          // Continue to upload anyway as a fallback
-        }
-        
-        try {
+          
           // Create a Blob and File from the content
           const blob = new Blob([fileContent], { type: 'application/json' });
           const file = new File([blob], customFileName, { type: 'application/json' });
           
-          // Upload the file with a unique ID.
-          this.logger.log(`Uploading ${customFileName} to Appwrite...`);
+          // Upload the file with our stable ID
+          this.logger.log(`Uploading ${customFileName} to Appwrite with ID: ${stableFileId}...`);
           const response = await storage.createFile(
             process.env.APPWRITE_OTA_BUCKET_ID,
-            'unique()', // Let Appwrite generate a unique file ID.
+            stableFileId, // Use our stable ID instead of random 'unique()'
             file
           );
           
-          if (!response || !response.$id) {
-            throw new Error('Upload response from Appwrite is missing file ID');
-          }
-          
           // Verify the file was uploaded correctly by fetching a preview
-          await storage.getFileView(process.env.APPWRITE_OTA_BUCKET_ID, response.$id);
+          await storage.getFileView(process.env.APPWRITE_OTA_BUCKET_ID, stableFileId);
           
           // Update our cache with the new content hash
           this.otaPackHashCache.set(cacheKey, contentHash);
           
-          uploadResults[fileName] = response.$id;
-          this.logger.log(`✅ Successfully uploaded ${customFileName} with file ID ${response.$id}`);
+          uploadResults[fileName] = stableFileId;
+          this.logger.log(`✅ Successfully uploaded ${customFileName} with stable file ID ${stableFileId}`);
         } catch (uploadError) {
           this.logger.error(`❌ Failed to upload ${customFileName}: ${uploadError.message}`);
           throw uploadError; // Re-throw to handle it at the method level
