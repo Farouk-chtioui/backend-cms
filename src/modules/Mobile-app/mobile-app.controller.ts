@@ -8,6 +8,7 @@ import {
   Logger,
   HttpException,
   HttpStatus,
+  Query,
 } from '@nestjs/common';
 import { MobileAppService } from './mobile-app.service';
 import { CreateMobileAppDto } from './dto/create-mobile-app.dto';
@@ -94,26 +95,80 @@ export class MobileAppController {
     return this.mobileAppService.getFullMobileAppData(mobileId);
   }
 
-  // ------------------------------------------
-  // NEW ENDPOINT: Generate the mobile app
-  // ------------------------------------------
+  // Updated endpoint: Generate the mobile app with optional ota-only and forceRebuild parameters
   @Post(':id/generate')
-  async generateMobileApp(@Param('id') mobileAppId: string) {
+  async generateMobileApp(
+    @Param('id') mobileAppId: string,
+    @Query('otaOnly') otaOnly: string,
+    @Query('forceRebuild') forceRebuild: string,
+    @Query('forceOtaUpdate') forceOtaUpdate: string
+  ) {
     try {
       // 1) Retrieve all data needed to build the Flutter application
       const fullData = await this.mobileAppService.getFullMobileAppData(mobileAppId);
 
-      // 2) Call a service method that delegates to AppGenerationService
-      const result = await this.mobileAppService.generateMobileApp(fullData);
+      // Convert query string parameters to boolean
+      const updateOnlyOta = otaOnly === 'true';
+      const shouldForceRebuild = forceRebuild === 'true';
+      // New parameter to force OTA update without rebuild
+      const shouldForceOtaUpdate = forceOtaUpdate === 'true';
+      
+      this.logger.log(`Generating app with otaOnly=${updateOnlyOta}, forceRebuild=${shouldForceRebuild}, forceOtaUpdate=${shouldForceOtaUpdate}`);
+
+      // 2) Call a service method that delegates to AppGenerationService with the options
+      const result = await this.mobileAppService.generateMobileApp(
+        fullData, 
+        updateOnlyOta, 
+        shouldForceRebuild,
+        shouldForceOtaUpdate
+      );
 
       return {
-        message: 'App generation complete',
+        message: updateOnlyOta && !shouldForceRebuild 
+          ? 'OTA pack update complete' 
+          : 'App generation complete',
         data: result,
       };
     } catch (error) {
       this.logger.error(`App generation failed: ${error.message}`);
       throw new HttpException(
         `Failed to generate app: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  // NEW ENDPOINT: Update build result after CI/CD workflow completes (callback from CI/CD)
+  @Put(':id/update-build')
+  async updateBuildResult(
+    @Param('id') mobileAppId: string,
+    @Body() body: { apkUrl: string },
+  ) {
+    try {
+      const result = await this.mobileAppService.updateBuildResult(mobileAppId, body.apkUrl);
+      return {
+        message: 'Build result updated successfully',
+        data: result,
+      };
+    } catch (error) {
+      this.logger.error(`Failed to update build result: ${error.message}`);
+      throw new HttpException(
+        `Failed to update build result: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  // NEW ENDPOINT: Retrieve build status including APK URL and QR code
+  @Get(':id/build-status')
+  async getBuildStatus(@Param('id') mobileAppId: string) {
+    try {
+      const status = await this.mobileAppService.getBuildStatus(mobileAppId);
+      return status;
+    } catch (error) {
+      this.logger.error(`Failed to get build status: ${error.message}`);
+      throw new HttpException(
+        `Failed to get build status: ${error.message}`,
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }

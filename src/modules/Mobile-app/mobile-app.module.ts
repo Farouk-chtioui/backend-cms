@@ -9,11 +9,16 @@ import { AppGenerationModule } from '../app-generation/app-generation.module';
 import { AppLayoutSchema } from '../appLayout/appLayout.schema';
 import { ScreenModule } from '../screen/screen.module'; // New import
 import { OnboardingScreensModule } from '../onboarding-screens/onboardingscreens.module';
+import { Repository, RepositorySchema } from '../Repositories/repository.schema'; // Add this import
+import { ImageKitService } from '../../shared/imagekit.service'; // Add this import
 
 @Module({
   imports: [
-    MongooseModule.forFeature([{ name: MobileApp.name, schema: MobileAppSchema }]),
-    MongooseModule.forFeature([{ name: 'AppLayout', schema: AppLayoutSchema }]),
+    MongooseModule.forFeature([
+      { name: MobileApp.name, schema: MobileAppSchema },
+      { name: 'AppLayout', schema: AppLayoutSchema },
+      { name: Repository.name, schema: RepositorySchema }, // Add Repository model
+    ]),
     forwardRef(() => AppDesignModule), // Resolve circular dependencies with AppDesignModule
     forwardRef(() => AppLayoutModule), // Import AppLayoutModule for AppLayout model
     AppGenerationModule, // AppGenerationModule for app generation services
@@ -21,7 +26,10 @@ import { OnboardingScreensModule } from '../onboarding-screens/onboardingscreens
     OnboardingScreensModule, // Add OnboardingScreensModule to access OnboardingScreensService
   ],
   controllers: [MobileAppController],
-  providers: [MobileAppService],
+  providers: [
+    MobileAppService,
+    ImageKitService, // Add ImageKitService
+  ],
   exports: [MobileAppService],
 })
 export class MobileAppModule {}

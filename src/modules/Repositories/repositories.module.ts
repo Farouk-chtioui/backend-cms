@@ -7,6 +7,7 @@ import { MobileAppModule } from '../mobile-app/mobile-app.module'; // Import Mob
 import { AppDesignModule } from '../appDesign/appDesign.module'; // Import AppDesignModule
 import { UsersModule } from '../users/users.module';
 import { AppLayoutModule } from '../appLayout/appLayout.module';
+import { ImageKitService } from '../../shared/imagekit.service';
 
 @Module({
   imports: [
@@ -17,7 +18,10 @@ import { AppLayoutModule } from '../appLayout/appLayout.module';
     forwardRef(()=>UsersModule)
   ],
   controllers: [RepositoriesController],
-  providers: [RepositoriesService],
+  providers: [
+    RepositoriesService,
+    ImageKitService,
+  ],
   exports: [RepositoriesService],
 })
 export class RepositoriesModule {}

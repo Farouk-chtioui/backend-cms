@@ -23,6 +23,12 @@ export class MobileApp extends Document {
   @Prop()
   userEmail?: string;
 
+  // New properties for build result tracking:
+  @Prop({ default: null })
+  apkUrl: string;
+
+  @Prop({ default: null })
+  qrCodeDataUrl: string;
 }
 
 export const MobileAppSchema = SchemaFactory.createForClass(MobileApp);
