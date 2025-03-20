@@ -27,7 +27,19 @@ export class AppLayout extends Document {
           default: 'screen',
         },
         route: String,
-        screenId: { type: Types.ObjectId, ref: 'Screen', required: false },
+        screenId: { 
+          type: Types.ObjectId, 
+          ref: 'Screen', 
+          required: false,
+          // Add this check function to handle empty strings
+          validate: {
+            validator: function(v) {
+              // Allow null, undefined, or valid ObjectId
+              return v === null || v === undefined || Types.ObjectId.isValid(v);
+            },
+            message: props => `${props.value} is not a valid ObjectId or null value`
+          }
+        },
       },
     ],
     default: [],

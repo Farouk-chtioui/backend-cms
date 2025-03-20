@@ -126,7 +126,22 @@ export class AppLayoutService {
     if (!layout) {
       throw new NotFoundException(`AppLayout with ID ${layoutId} not found`);
     }
-  
+    
+    // Clean the data before applying it - handle empty screenId values
+    if (updateAppLayoutDto.bottomBarTabs) {
+      updateAppLayoutDto.bottomBarTabs = updateAppLayoutDto.bottomBarTabs.map(tab => {
+        // If screenId is empty string (need to check type first) or undefined/null, set it to null
+        if (!tab.screenId || (typeof tab.screenId === 'string' && tab.screenId === '')) {
+          return { ...tab, screenId: null };
+        }
+        // If screenId exists but isn't a valid ObjectId, set to null
+        if (tab.screenId && !Types.ObjectId.isValid(String(tab.screenId))) {
+          return { ...tab, screenId: null };
+        }
+        return tab;
+      });
+    }
+    
     Object.assign(layout, updateAppLayoutDto);
     await layout.save();
     return layout;
@@ -205,16 +220,20 @@ export class AppLayoutService {
       throw new NotFoundException(`Tab ${tabName} not found`);
     }
 
-    if (routeType === 'screen' && !screenId) {
-      const screen = await this.screenService.ensureDefaultScreenExists(layout.appId.toString(), route);
-      screenId = screen._id.toString();
+    if (routeType === 'screen') {
+      let screen;
+      if (screenId) {
+        screen = await this.screenService.findById(screenId);
+      } else {
+        screen = await this.screenService.ensureDefaultScreenExists(layout.appId.toString(), route);
+      }
+      layout.bottomBarTabs[tabIndex].screenId = screen._id;
+    } else {
+      layout.bottomBarTabs[tabIndex].screenId = undefined;
     }
 
     layout.bottomBarTabs[tabIndex].routeType = routeType;
     layout.bottomBarTabs[tabIndex].route = route;
-    if (routeType === 'screen' && screenId) {
-      layout.bottomBarTabs[tabIndex].screenId = screenId as any;
-    }
 
     return layout.save();
   }
