@@ -7,6 +7,7 @@ import { MobileAppService } from '../mobile-app/mobile-app.service';
 import { AppDesignService } from '../appDesign/appDesign.service';
 import { AppLayoutService } from '../appLayout/appLayout.service';
 import { UsersService } from '../users/users.service';
+import { ImageKitService } from '../../shared/imagekit.service';
 
 @Injectable()
 export class RepositoriesService {
@@ -17,6 +18,7 @@ export class RepositoriesService {
     private readonly appLayoutService: AppLayoutService,
     @Inject(forwardRef(() => UsersService))
     private readonly usersService: UsersService,
+    private readonly imageKitService: ImageKitService,
   ) {}
 
   async create(createRepositoryDto: CreateRepositoryDto): Promise<Repository> {
@@ -26,13 +28,17 @@ export class RepositoriesService {
       throw new Error('Repository name cannot be null or empty');
     }
 
+    // Process images using ImageKit if they are base64
+    const processedImage = image ? await this.imageKitService.processImage(image, `repo_${repositoryName}`) : null;
+    const processedCoverImage = coverImage ? await this.imageKitService.processImage(coverImage, `repo_cover_${repositoryName}`) : null;
+
     const newRepository = new this.repositoryModel({
       repositoryName,
       ownerId,
       description,
       isPrivate,
-      image,
-      coverImage,
+      image: processedImage,
+      coverImage: processedCoverImage,
       team: team || [],
       createdAt: new Date(),
     });
@@ -113,19 +119,32 @@ export class RepositoriesService {
   }
 
   async update(id: string, updateRepositoryDto: Partial<CreateRepositoryDto>): Promise<Repository> {
-    const { team, coverImage } = updateRepositoryDto;
-
-    if (team || coverImage) {
-      return this.repositoryModel
-        .findByIdAndUpdate(id, { $set: { team, coverImage } }, { new: true })
-        .populate('mobileAppId')
-        .populate('ownerId')
-        .populate('team')
-        .exec();
+    const { team, coverImage, image } = updateRepositoryDto;
+    
+    const updateData: any = {};
+    
+    // Process images if provided
+    if (image) {
+      updateData.image = await this.imageKitService.processImage(image, `repo_${id}`);
     }
+    
+    if (coverImage) {
+      updateData.coverImage = await this.imageKitService.processImage(coverImage, `repo_cover_${id}`);
+    }
+    
+    if (team) {
+      updateData.team = team;
+    }
+    
+    // Add any other fields from updateRepositoryDto that aren't specially handled
+    Object.keys(updateRepositoryDto).forEach(key => {
+      if (!['team', 'coverImage', 'image'].includes(key)) {
+        updateData[key] = updateRepositoryDto[key];
+      }
+    });
 
     return this.repositoryModel
-      .findByIdAndUpdate(id, updateRepositoryDto, { new: true })
+      .findByIdAndUpdate(id, { $set: updateData }, { new: true })
       .populate('mobileAppId')
       .populate('ownerId')
       .populate('team')
