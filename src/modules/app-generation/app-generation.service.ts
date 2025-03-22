@@ -15,7 +15,7 @@ export class AppGenerationService {
   private otaPackHashCache = new Map<string, string>();
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // Top-level method (unchanged from your code, except the new “uploadOtaPacksToCloud”):
+  // Top-level method
   // ─────────────────────────────────────────────────────────────────────────────
   async generateOrUpdateFlutterApp(
     fullAppData: any,
@@ -23,9 +23,23 @@ export class AppGenerationService {
     forceRebuild = false
   ): Promise<any> {
     try {
-      const appId = fullAppData.mobileApp?._id ? String(fullAppData.mobileApp._id) : 'no_id';
-      const workingDir = path.join('C:\\Users\\WT\\Desktop\\PFE PROJECT\\flutter_builds', appId);
-      const globalTemplateDir = path.join('C:\\Users\\WT\\Desktop\\PFE PROJECT\\flutter_template');
+      /**
+       * If fullAppData.mobileApp._id is missing or empty,
+       * create a fallback so we don’t end up with "no_id" for all apps.
+       */
+      const realId =
+        fullAppData.mobileApp?._id && String(fullAppData.mobileApp._id).trim() !== ''
+          ? String(fullAppData.mobileApp._id)
+          : crypto.randomBytes(6).toString('hex');
+
+      const appId = realId;
+      const workingDir = path.join(
+        'C:\\Users\\WT\\Desktop\\PFE PROJECT\\flutter_builds',
+        appId
+      );
+      const globalTemplateDir = path.join(
+        'C:\\Users\\WT\\Desktop\\PFE PROJECT\\flutter_template'
+      );
 
       const repositoryInfo = fullAppData.repository || {};
       const appName =
@@ -66,7 +80,11 @@ export class AppGenerationService {
       await Promise.all(
         Object.entries(otaPacks).map(([packName, packData]) => {
           const outPath = path.join(packsDir, `${packName}_pack.json`);
-          return fs.promises.writeFile(outPath, JSON.stringify(packData, null, 2), 'utf8');
+          return fs.promises.writeFile(
+            outPath,
+            JSON.stringify(packData, null, 2),
+            'utf8'
+          );
         })
       );
 
@@ -80,15 +98,24 @@ export class AppGenerationService {
       }
 
       // 7) Decide if only updating OTA (no rebuild)
-      const shouldUpdateOtaOnly = (updateOnlyOta || existingApkFileId !== null) && !forceRebuild;
+      const shouldUpdateOtaOnly =
+        (updateOnlyOta || existingApkFileId !== null) && !forceRebuild;
 
       // 8) Upload only changed OTA packs
-      const otaUploads = await this.uploadOtaPacksToCloud(workingDir, appId, forceRebuild);
+      const otaUploads = await this.uploadOtaPacksToCloud(
+        workingDir,
+        appId,
+        forceRebuild
+      );
 
       // 9) Build endpoints.json
       const otaEndpoints = this.generateOtaEndpoints(otaUploads);
       const endpointsFilePath = path.join(packsDir, 'endpoints.json');
-      await fs.promises.writeFile(endpointsFilePath, JSON.stringify(otaEndpoints, null, 2), 'utf8');
+      await fs.promises.writeFile(
+        endpointsFilePath,
+        JSON.stringify(otaEndpoints, null, 2),
+        'utf8'
+      );
 
       // 9a) Also upload endpoints.json with a stable ID
       try {
@@ -188,7 +215,9 @@ export class AppGenerationService {
           ])
         ),
       };
-      this.logger.log(`Build complete: ${JSON.stringify({...resultData, qrCodeDataUrl: 'omitted'})}`);
+      this.logger.log(
+        `Build complete: ${JSON.stringify({ ...resultData, qrCodeDataUrl: 'omitted' })}`
+      );
       return resultData;
     } catch (error) {
       this.logger.error(`Error generating/updating Flutter app: ${error.message}`);
@@ -197,7 +226,7 @@ export class AppGenerationService {
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // UPLOAD ONLY IF CONTENTS CHANGED. If changed -> preemptively delete the single stable file.
+  // UPLOAD ONLY IF CONTENTS CHANGED
   // ─────────────────────────────────────────────────────────────────────────────
   async uploadOtaPacksToCloud(workingDir: string, appId: string, forceUpdate: boolean) {
     const packsDir = path.join(workingDir, 'assets', 'ota_packs');
@@ -232,7 +261,10 @@ export class AppGenerationService {
         if (!forceUpdate && this.otaPackHashCache.get(cacheKey) === contentHash) {
           this.logger.log(`No changes for ${fileName}; skipping upload`);
           // Figure out stableFileId from pack name
-          const shortHash = crypto.createHash('md5').update(appId).digest('hex').slice(0, 8);
+          const shortHash = crypto.createHash('md5')
+            .update(appId)
+            .digest('hex')
+            .slice(0, 8);
           const packType = fileName.replace('_pack.json', '');
           const stableFileId = `${shortHash}_${packType}`
             .toLowerCase()
@@ -244,7 +276,10 @@ export class AppGenerationService {
         }
 
         // We do need to upload the file
-        const shortHash = crypto.createHash('md5').update(appId).digest('hex').slice(0, 8);
+        const shortHash = crypto.createHash('md5')
+          .update(appId)
+          .digest('hex')
+          .slice(0, 8);
         const packType = fileName.replace('_pack.json', '');
         const stableFileId = `${shortHash}_${packType}`
           .toLowerCase()
@@ -266,8 +301,14 @@ export class AppGenerationService {
 
         // 2) Now createFile
         const blob = new Blob([rawContent], { type: 'application/json' });
-        const fileObj = new File([blob], `${appId}_${fileName}`, { type: 'application/json' });
-        await storage.createFile(process.env.APPWRITE_OTA_BUCKET_ID, stableFileId, fileObj);
+        const fileObj = new File([blob], `${appId}_${fileName}`, {
+          type: 'application/json',
+        });
+        await storage.createFile(
+          process.env.APPWRITE_OTA_BUCKET_ID,
+          stableFileId,
+          fileObj
+        );
 
         // 3) Update local hash
         this.otaPackHashCache.set(cacheKey, contentHash);
@@ -389,7 +430,16 @@ export class AppGenerationService {
     const blob = new Blob([data], { type: 'application/zip' });
     const fileObj = new File([blob], customZipName, { type: 'application/zip' });
 
-    const uploaded = await storage.createFile(process.env.APPWRITE_APK_BUCKET_ID, 'unique()', fileObj);
+    /**
+     * Note: Using 'unique()' for the file ID means each new upload
+     * gets a fresh $id, but the name is still your customZipName
+     * (so queries on `name` will find it).
+     */
+    const uploaded = await storage.createFile(
+      process.env.APPWRITE_APK_BUCKET_ID,
+      'unique()',
+      fileObj
+    );
     this.logger.log(`Uploaded artifact zip to Appwrite: fileId=${uploaded.$id}`);
     return uploaded.$id;
   }
@@ -419,7 +469,8 @@ export class AppGenerationService {
     const repoName = 'flutter_template';
 
     const repository = fullAppData.repository || {};
-    const appName = repository.repositoryName || fullAppData.mobileApp?.name || 'My Generated App';
+    const appName =
+      repository.repositoryName || fullAppData.mobileApp?.name || 'My Generated App';
     const packageName = appName
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '_')
@@ -429,7 +480,9 @@ export class AppGenerationService {
       event_type: 'build_app',
       client_payload: {
         config: {
-          appId: fullAppData.mobileApp?._id ? String(fullAppData.mobileApp._id) : null,
+          appId: fullAppData.mobileApp?._id
+            ? String(fullAppData.mobileApp._id)
+            : null,
           appName,
           packageName,
           appDescription: repository.description || '',
@@ -461,7 +514,7 @@ export class AppGenerationService {
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // Wait for GH Actions to build, then find the "flutter-apks" artifact
+  // Wait for GH Actions to build, then find the "flutter-universal-apk" artifact
   // ─────────────────────────────────────────────────────────────────────────────
   async trackWorkflow(appId: string) {
     const token = process.env.GITHUB_TOKEN;
@@ -502,20 +555,20 @@ export class AppGenerationService {
       await new Promise((r) => setTimeout(r, 10000));
     }
 
-    // 3) find flutter-apks artifact
+    // 3) find flutter-universal-apk artifact
     const artifactsUrl = `https://api.github.com/repos/${repoOwner}/${repoName}/actions/runs/${runId}/artifacts`;
     let artifact: any = null;
     for (let k = 0; k < 10; k++) {
       const artifactsResp = await axios.get(artifactsUrl, {
         headers: { Authorization: `token ${token}` },
       });
-      artifact = artifactsResp.data.artifacts.find((a: any) => a.name === 'flutter-apks');
+      artifact = artifactsResp.data.artifacts.find((a: any) => a.name === 'flutter-universal-apk');
       if (artifact) {
         break;
       }
       await new Promise((r) => setTimeout(r, 10000));
     }
-    if (!artifact) throw new Error("Artifact 'flutter-apks' not found");
+    if (!artifact) throw new Error("Artifact 'flutter-universal-apk' not found");
     return artifact;
   }
 
@@ -596,7 +649,10 @@ flutter:
     - assets/ota_packs/onboarding_pack.json
     - assets/ota_packs/config_pack.json
 `;
-      pubspecContent = pubspecContent.replace(/(flutter:\s*)/, `$1\n${assetConfig}`);
+      pubspecContent = pubspecContent.replace(
+        /(flutter:\s*)/,
+        `$1\n${assetConfig}`
+      );
       fs.writeFileSync(pubspecPath, pubspecContent, 'utf8');
       this.logger.log('Updated pubspec.yaml to include OTA asset references');
     }
