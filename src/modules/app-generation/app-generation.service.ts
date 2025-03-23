@@ -34,11 +34,11 @@ export class AppGenerationService {
 
       const appId = realId;
       const workingDir = path.join(
-        process.env.FLUTTER_BUILDS_DIR || 'C:\\Users\\WT\\Desktop\\PFE PROJECT\\flutter_builds',
+        'C:\\Users\\WT\\Desktop\\PFE PROJECT\\flutter_builds',
         appId
       );
       const globalTemplateDir = path.join(
-        process.env.FLUTTER_TEMPLATE_DIR || 'C:\\Users\\WT\\Desktop\\PFE PROJECT\\flutter_template'
+        'C:\\Users\\WT\\Desktop\\PFE PROJECT\\flutter_template'
       );
 
       const repositoryInfo = fullAppData.repository || {};
