@@ -6,6 +6,7 @@ import * as QRCode from 'qrcode';
 import { Client, Query, Storage } from 'node-appwrite';
 import * as AdmZip from 'adm-zip';
 import * as crypto from 'crypto';
+import { execSync } from 'child_process';
 
 @Injectable()
 export class AppGenerationService {
@@ -14,8 +15,22 @@ export class AppGenerationService {
   // MD5 hash cache: keys = `${appId}_${fileName}`, value = MD5 of the file
   private otaPackHashCache = new Map<string, string>();
 
+  constructor() {
+    // Load any existing cache from disk (ota-md5-cache.json in a known location)
+    const cachePath = path.resolve(__dirname, 'ota-md5-cache.json');
+    if (fs.existsSync(cachePath)) {
+      try {
+        const raw = fs.readFileSync(cachePath, 'utf8');
+        const parsed = JSON.parse(raw);
+        this.otaPackHashCache = new Map(Object.entries(parsed));
+      } catch {
+        this.logger.warn('Failed reading existing ota-md5-cache.json');
+      }
+    }
+  }
+
   // ─────────────────────────────────────────────────────────────────────────────
-  // Top-level method
+  // Top-level method (reordered logic)
   // ─────────────────────────────────────────────────────────────────────────────
   async generateOrUpdateFlutterApp(
     fullAppData: any,
@@ -37,9 +52,6 @@ export class AppGenerationService {
         'C:\\Users\\WT\\Desktop\\PFE PROJECT\\flutter_builds',
         appId
       );
-      const globalTemplateDir = path.join(
-        'C:\\Users\\WT\\Desktop\\PFE PROJECT\\flutter_template'
-      );
 
       const repositoryInfo = fullAppData.repository || {};
       const appName =
@@ -52,29 +64,36 @@ export class AppGenerationService {
       this.logger.log(`Starting app generation for appId: ${appId}, name: ${appName}`);
       this.logger.log(`Update only OTA: ${updateOnlyOta}, Force rebuild: ${forceRebuild}`);
 
-      // 1) Ensure template folder
-      if (!fs.existsSync(globalTemplateDir)) {
-        throw new Error(`Source template folder does not exist: ${globalTemplateDir}`);
-      }
+      let hasSetupError = false;
 
-      // 2) Create working directory if needed
+      // 1) Ensure the local working directory is set up:
+      //    - If it does not exist, clone the flutter_template from GitHub
       let isNewApp = false;
       if (!fs.existsSync(workingDir)) {
-        isNewApp = true;
-        fs.mkdirSync(workingDir, { recursive: true });
-        this.logger.log(`Created new working directory: ${workingDir}`);
-        this.copyFolder(globalTemplateDir, workingDir);
+        try {
+          isNewApp = true;
+          fs.mkdirSync(workingDir, { recursive: true });
+          this.logger.log(`Created new working directory: ${workingDir}`);
+          // Clone flutter_template into that folder
+          await this.cloneFlutterTemplate(workingDir);
+        } catch (err) {
+          hasSetupError = true;
+          this.logger.error(`Setup failed, cannot clone flutter template: ${err.message}`);
+        }
       } else {
         this.logger.log(`Working directory already exists: ${workingDir}`);
       }
 
-      // 3) Split data -> multiple JSON
+      if (hasSetupError) {
+        throw new Error('Aborting because of errors in setup steps.');
+      }
+
+      // 2) Generate local JSON (OTA packs) from the fullAppData
       const otaPacks = this.splitIntoOTAPacks(fullAppData);
       if (!otaPacks || Object.keys(otaPacks).length === 0) {
         throw new Error('OTA Pack generation failed!');
       }
 
-      // 4) Write JSON files to assets/ota_packs
       const packsDir = path.join(workingDir, 'assets', 'ota_packs');
       fs.mkdirSync(packsDir, { recursive: true });
       await Promise.all(
@@ -88,28 +107,42 @@ export class AppGenerationService {
         })
       );
 
-      // 5) Check if an APK is already in Appwrite
+      // 3) Check if an APK is already in Appwrite
       const existingApkFileId = await this.checkExistingApk(appId);
 
-      // 6) If forceRebuild is true, remove that existing APK
-      if (forceRebuild && existingApkFileId) {
-        await this.deleteExistingApk(existingApkFileId);
-        this.logger.log(`Force rebuild: deleted existing APK ID = ${existingApkFileId}`);
-      }
-
-      // 7) Decide if only updating OTA (no rebuild)
+      // 4) Decide if this is an OTA-only update
+      //    (We already have an APK AND user asked for OTA, and not forcing rebuild)
       const shouldUpdateOtaOnly =
         (updateOnlyOta || existingApkFileId !== null) && !forceRebuild;
 
-      // 8) Upload only changed OTA packs
-      const otaUploads = await this.uploadOtaPacksToCloud(
-        workingDir,
-        appId,
-        forceRebuild
-      );
+      // 1) Check if OTA has any changes before uploading
+      const hasOtaChanges = await this.checkOtaChanges(workingDir, appId, forceRebuild);
+      this.logger.log(`OTA changes detected: ${hasOtaChanges}`);
 
-      // 9) Build endpoints.json
-      const otaEndpoints = this.generateOtaEndpoints(otaUploads);
+      // 2) Trigger GH workflow if full rebuild or if OTA changes exist
+      if (!shouldUpdateOtaOnly || hasOtaChanges) {
+        // await this.triggerBuildWorkflow(fullAppData, {} /* pass empty endpoints now */);
+        this.logger.log(`(Removed first GH trigger to avoid double-actions)`);
+        if (forceRebuild && existingApkFileId) {
+          await this.deleteExistingApk(existingApkFileId);
+          this.logger.log(`Force rebuild: deleted existing APK ID = ${existingApkFileId}`);
+        }
+        // Now trigger GH once
+        await this.triggerBuildWorkflow(fullAppData, {} /* pass empty endpoints now */);
+        this.logger.log(`(First GH trigger called only if needed)`);
+      }
+
+      // 3) Actually upload packs only if changes exist (or forced)
+      let uploadResults = {};
+      let changedSomething = hasOtaChanges;
+      if (hasOtaChanges || forceRebuild) {
+        const result = await this.uploadOtaPacksToCloud(workingDir, appId, forceRebuild);
+        uploadResults = result.uploadResults;
+        changedSomething = result.changedSomething;
+      }
+
+      // 4) Build endpoints, skip second build if no changes & we have an existing APK
+      const otaEndpoints = this.generateOtaEndpoints(uploadResults);
       const endpointsFilePath = path.join(packsDir, 'endpoints.json');
       await fs.promises.writeFile(
         endpointsFilePath,
@@ -117,7 +150,7 @@ export class AppGenerationService {
         'utf8'
       );
 
-      // 9a) Also upload endpoints.json with a stable ID
+      // 8a) Also upload endpoints.json with a stable ID
       try {
         const client = new Client()
           .setEndpoint(process.env.APPWRITE_ENDPOINT)
@@ -131,10 +164,11 @@ export class AppGenerationService {
           .replace(/[^a-z0-9._-]/g, '_')
           .slice(0, 36);
 
+        // Delete existing endpoints file if present
         try {
           await storage.deleteFile(process.env.APPWRITE_OTA_BUCKET_ID, stableEndpointsId);
         } catch {
-          /* if it doesn't exist, ignore */
+          /* ignore if it doesn't exist */
         }
 
         const endpointsContent = await fs.promises.readFile(endpointsFilePath);
@@ -151,14 +185,15 @@ export class AppGenerationService {
         this.logger.error(`Failed uploading endpoints file: ${err.message}`);
       }
 
-      // 10) Update pubspec.yaml
+      // 9) Update pubspec.yaml to include references to the assets/ota_packs
       this.updatePubspecYaml(workingDir);
 
-      // 11) If no rebuild needed, return existing APK info
-      if (shouldUpdateOtaOnly) {
+      // 10) If we only needed an OTA update, we skip the second build
+      if (shouldUpdateOtaOnly || (!changedSomething && existingApkFileId)) {
         let apkDownloadUrl: string | null = null;
         let publicDownloadUrl: string | null = null;
         let qrCodeDataUrl: string | null = null;
+
         if (existingApkFileId) {
           apkDownloadUrl = `${process.env.APPWRITE_ENDPOINT}/storage/buckets/${process.env.APPWRITE_APK_BUCKET_ID}/files/${existingApkFileId}/download?project=${process.env.APPWRITE_PROJECT_ID}&mode=admin`;
           publicDownloadUrl = `${process.env.APPWRITE_ENDPOINT}/storage/buckets/${process.env.APPWRITE_APK_BUCKET_ID}/files/${existingApkFileId}/download?project=${process.env.APPWRITE_PROJECT_ID}`;
@@ -167,7 +202,7 @@ export class AppGenerationService {
 
         return {
           success: true,
-          message: 'OTA packs updated. No rebuild triggered as APK already exists.',
+          message: 'OTA packs updated. No rebuild triggered (APK already exists).',
           appName,
           appLogo,
           apkUrl: apkDownloadUrl,
@@ -177,7 +212,7 @@ export class AppGenerationService {
               packName,
               {
                 localPath: path.join(packsDir, `${packName}_pack.json`),
-                cloudFileId: otaUploads[`${packName}_pack.json`] || null,
+                cloudFileId: uploadResults[`${packName}_pack.json`] || null,
                 endpoint: otaEndpoints[packName] || null,
               },
             ])
@@ -185,12 +220,17 @@ export class AppGenerationService {
         };
       }
 
-      // 12) Otherwise, do a full rebuild via GitHub Actions
+      // ─────────────────────────────────────────────────────────────────
+      // 11) Otherwise, do a full rebuild: now that GH is triggered, wait
+      //     for it to finish, download the artifact, and upload it to Appwrite
+      // ─────────────────────────────────────────────────────────────────
+      // Re-trigger GH with the final endpoints if you want them in the build
       await this.triggerBuildWorkflow(fullAppData, otaEndpoints);
+
       const githubArtifact = await this.trackWorkflow(appId);
       const apkFileId = await this.downloadAndUploadApkToAppwrite(githubArtifact, appId);
 
-      // 13) Generate URLs, QR
+      // 12) Generate final download/QR codes
       const apkDownloadUrl = `${process.env.APPWRITE_ENDPOINT}/storage/buckets/${process.env.APPWRITE_APK_BUCKET_ID}/files/${apkFileId}/download?project=${process.env.APPWRITE_PROJECT_ID}&mode=admin`;
       const publicDownloadUrl = `${process.env.APPWRITE_ENDPOINT}/storage/buckets/${process.env.APPWRITE_APK_BUCKET_ID}/files/${apkFileId}/download?project=${process.env.APPWRITE_PROJECT_ID}`;
       const qrCodeDataUrl = await QRCode.toDataURL(publicDownloadUrl);
@@ -198,8 +238,8 @@ export class AppGenerationService {
       const resultData = {
         success: true,
         message: isNewApp
-          ? 'Flutter app creation triggered and build completed successfully'
-          : 'Flutter app update triggered and build completed successfully',
+          ? 'Flutter app creation and build completed successfully'
+          : 'Flutter app update and build completed successfully',
         appName,
         appLogo,
         apkUrl: apkDownloadUrl,
@@ -209,12 +249,13 @@ export class AppGenerationService {
             packName,
             {
               localPath: path.join(packsDir, `${packName}_pack.json`),
-              cloudFileId: otaUploads[`${packName}_pack.json`] || null,
+              cloudFileId: uploadResults[`${packName}_pack.json`] || null,
               endpoint: otaEndpoints[packName] || null,
             },
           ])
         ),
       };
+
       this.logger.log(
         `Build complete: ${JSON.stringify({ ...resultData, qrCodeDataUrl: 'omitted' })}`
       );
@@ -225,8 +266,41 @@ export class AppGenerationService {
     }
   }
 
+  // Helper method to detect if any OTA packs changed, without uploading
+  private async checkOtaChanges(
+    workingDir: string,
+    appId: string,
+    forceUpdate: boolean
+  ): Promise<boolean> {
+    const packsDir = path.join(workingDir, 'assets', 'ota_packs');
+    if (!fs.existsSync(packsDir)) {
+      return false;
+    }
+    const files = fs.readdirSync(packsDir).filter((f) => f !== 'endpoints.json');
+    for (const fileName of files) {
+      const filePath = path.join(packsDir, fileName);
+      const rawContent = fs.readFileSync(filePath, 'utf8');
+      const contentHash = crypto.createHash('md5').update(rawContent).digest('hex');
+      const cacheKey = `${appId}_${fileName}`;
+      if (forceUpdate || this.otaPackHashCache.get(cacheKey) !== contentHash) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   // ─────────────────────────────────────────────────────────────────────────────
-  // UPLOAD ONLY IF CONTENTS CHANGED
+  // Clone the flutter_template repo into workingDir
+  // ─────────────────────────────────────────────────────────────────────────────
+  private async cloneFlutterTemplate(workingDir: string) {
+    const repoUrl = 'https://github.com/Farouk-chtioui/flutter_template.git';
+    this.logger.log(`Cloning template from GitHub: ${repoUrl}`);
+    execSync(`git clone --depth 1 ${repoUrl} .`, { cwd: workingDir });
+    this.logger.log('Cloned flutter_template successfully');
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Build and upload OTA packs only if changed
   // ─────────────────────────────────────────────────────────────────────────────
   async uploadOtaPacksToCloud(workingDir: string, appId: string, forceUpdate: boolean) {
     const packsDir = path.join(workingDir, 'assets', 'ota_packs');
@@ -241,13 +315,14 @@ export class AppGenerationService {
       .setKey(process.env.APPWRITE_API_KEY);
     const storage = new Storage(client);
 
+    let changedSomething = false;
     const uploadResults: Record<string, string> = {};
     const concurrencyLimit = 5;
     const tasks: Array<() => Promise<void>> = [];
 
     for (const fileName of files) {
       if (fileName === 'endpoints.json') {
-        // We handle endpoints.json separately
+        // We'll handle endpoints.json separately
         continue;
       }
 
@@ -257,10 +332,11 @@ export class AppGenerationService {
         const contentHash = crypto.createHash('md5').update(rawContent).digest('hex');
         const cacheKey = `${appId}_${fileName}`;
 
-        // If not forcing and the hash hasn't changed, skip re-upload
-        if (!forceUpdate && this.otaPackHashCache.get(cacheKey) === contentHash) {
+        // 1) If not forced, skip if content unchanged
+        const isChanged = forceUpdate || this.otaPackHashCache.get(cacheKey) !== contentHash;
+        if (!isChanged) {
           this.logger.log(`No changes for ${fileName}; skipping upload`);
-          // Figure out stableFileId from pack name
+          // figure out stableFileId
           const shortHash = crypto.createHash('md5')
             .update(appId)
             .digest('hex')
@@ -270,12 +346,12 @@ export class AppGenerationService {
             .toLowerCase()
             .replace(/[^a-z0-9._-]/g, '_')
             .slice(0, 36);
-
           uploadResults[fileName] = stableFileId;
           return;
         }
 
-        // We do need to upload the file
+        changedSomething = true;
+        // 2) The file changed (or forced), so re-upload
         const shortHash = crypto.createHash('md5')
           .update(appId)
           .digest('hex')
@@ -288,18 +364,17 @@ export class AppGenerationService {
 
         this.logger.log(`Uploading changed file: ${fileName}, stable ID: ${stableFileId}`);
 
-        // 1) If a file with that stable ID exists, delete it first.
+        // Delete old file if exists
         try {
           await storage.getFile(process.env.APPWRITE_OTA_BUCKET_ID, stableFileId);
-          // If getFile succeeded, it means there's an existing file with that ID
           this.logger.log(`Deleting old file ${stableFileId} before re-uploading`);
           await storage.deleteFile(process.env.APPWRITE_OTA_BUCKET_ID, stableFileId);
         } catch (errGet: any) {
-          // If the file does not exist, that's fine. We'll create it fresh.
+          // If not found, ignore
           this.logger.debug(`No existing file for ID ${stableFileId}: ${errGet.message}`);
         }
 
-        // 2) Now createFile
+        // 3) Upload new
         const blob = new Blob([rawContent], { type: 'application/json' });
         const fileObj = new File([blob], `${appId}_${fileName}`, {
           type: 'application/json',
@@ -310,7 +385,7 @@ export class AppGenerationService {
           fileObj
         );
 
-        // 3) Update local hash
+        // 4) Update local hash
         this.otaPackHashCache.set(cacheKey, contentHash);
         uploadResults[fileName] = stableFileId;
         this.logger.log(`Uploaded ${fileName} -> ID: ${stableFileId}`);
@@ -319,7 +394,13 @@ export class AppGenerationService {
 
     // concurrency-limited parallel
     await this.runConcurrently(tasks, concurrencyLimit);
-    return uploadResults;
+
+    // Save updated cache to disk
+    const cacheObj = Object.fromEntries(this.otaPackHashCache);
+    const cachePath = path.resolve(__dirname, 'ota-md5-cache.json');
+    fs.writeFileSync(cachePath, JSON.stringify(cacheObj, null, 2), 'utf8');
+
+    return { uploadResults, changedSomething };
   }
 
   // Helper for concurrency
@@ -407,7 +488,11 @@ export class AppGenerationService {
       });
       data = response.data;
     } catch (err: any) {
-      this.logger.error(`Failed to download artifact: ${err.message}`);
+      if (err.response?.status === 404) {
+        this.logger.error(
+          `GitHub artifact download 404. Repo or artifact may be missing: ${downloadUrl}`
+        );
+      }
       throw err;
     }
 
@@ -417,7 +502,7 @@ export class AppGenerationService {
       .setKey(process.env.APPWRITE_API_KEY);
     const storage = new Storage(client);
 
-    // remove any existing file with the same name
+    // Remove any existing file with the same name
     const customZipName = `${mobileAppId}_flutter-apks.zip`;
     const existingFiles = await storage.listFiles(process.env.APPWRITE_APK_BUCKET_ID, [
       Query.equal('name', customZipName),
@@ -430,11 +515,6 @@ export class AppGenerationService {
     const blob = new Blob([data], { type: 'application/zip' });
     const fileObj = new File([blob], customZipName, { type: 'application/zip' });
 
-    /**
-     * Note: Using 'unique()' for the file ID means each new upload
-     * gets a fresh $id, but the name is still your customZipName
-     * (so queries on `name` will find it).
-     */
     const uploaded = await storage.createFile(
       process.env.APPWRITE_APK_BUCKET_ID,
       'unique()',
@@ -462,6 +542,7 @@ export class AppGenerationService {
   // ─────────────────────────────────────────────────────────────────────────────
   private async triggerBuildWorkflow(fullAppData: any, otaEndpoints: any) {
     const token = process.env.GITHUB_TOKEN;
+    console.log('GitHub token length:', token ? token.length : 'MISSING');
     if (!token) {
       throw new Error('GITHUB_TOKEN is missing!');
     }
@@ -504,17 +585,35 @@ export class AppGenerationService {
     };
 
     const url = `https://api.github.com/repos/${repoOwner}/${repoName}/dispatches`;
-    await axios.post(url, payload, {
-      headers: {
-        Accept: 'application/vnd.github.v3+json',
-        Authorization: `token ${token}`,
-      },
-    });
+    try {
+      // The GitHub API returns 204 on success
+      const res = await axios.post(url, payload, {
+        headers: {
+          Accept: 'application/vnd.github.v3+json',
+          Authorization: `token ${token}`,
+        },
+      });
+      if (res.status !== 204) {
+        throw new Error(`Unexpected GH status: ${res.status}`);
+      }
+    } catch (err: any) {
+      if (err.response?.status === 403) {
+        this.logger.warn(
+          'GitHub returned 403. Check that your token has "repo" and "workflow" scopes, and repository dispatch is enabled.'
+        );
+      }
+      if (err.response?.status === 404) {
+        this.logger.error(
+          `GitHub 404. Check that repo ${repoOwner}/${repoName} exists, your token has access, and dispatch is allowed.`
+        );
+      }
+      throw err;
+    }
     this.logger.log('Triggered GitHub Actions build workflow');
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // Wait for GH Actions to build, then find the "flutter-universal-apk" artifact
+  // Poll GH for a new run, wait for it to complete, find “flutter-universal-apk”
   // ─────────────────────────────────────────────────────────────────────────────
   async trackWorkflow(appId: string) {
     const token = process.env.GITHUB_TOKEN;
@@ -525,7 +624,7 @@ export class AppGenerationService {
     const repoOwner = 'Farouk-chtioui';
     const repoName = 'flutter_template';
 
-    // 1) find run
+    // 1) find a run that is queued or in_progress for event=repository_dispatch
     const runsUrl = `https://api.github.com/repos/${repoOwner}/${repoName}/actions/runs?event=repository_dispatch`;
     let runId: number | null = null;
     for (let i = 0; i < 30; i++) {
@@ -555,20 +654,22 @@ export class AppGenerationService {
       await new Promise((r) => setTimeout(r, 10000));
     }
 
-    // 3) find flutter-universal-apk artifact
+    // 3) find “flutter-universal-apk” artifact
     const artifactsUrl = `https://api.github.com/repos/${repoOwner}/${repoName}/actions/runs/${runId}/artifacts`;
     let artifact: any = null;
     for (let k = 0; k < 10; k++) {
       const artifactsResp = await axios.get(artifactsUrl, {
         headers: { Authorization: `token ${token}` },
       });
-      artifact = artifactsResp.data.artifacts.find((a: any) => a.name === 'flutter-universal-apk');
+      artifact = artifactsResp.data.artifacts.find(
+        (a: any) => a.name === 'flutter-release-apk'
+      );
       if (artifact) {
         break;
       }
       await new Promise((r) => setTimeout(r, 10000));
     }
-    if (!artifact) throw new Error("Artifact 'flutter-universal-apk' not found");
+    if (!artifact) throw new Error("Artifact 'flutter-release-apk' not found");
     return artifact;
   }
 
@@ -601,32 +702,6 @@ export class AppGenerationService {
       coverImage: repository.coverImage || null,
     };
     return packs;
-  }
-
-  // ─────────────────────────────────────────────────────────────────────────────
-  // Copy the Flutter template
-  // ─────────────────────────────────────────────────────────────────────────────
-  private copyFolder(src: string, dest: string) {
-    if (!fs.existsSync(src)) {
-      throw new Error(`Source folder does not exist: ${src}`);
-    }
-    fs.mkdirSync(dest, { recursive: true });
-    const entries = fs.readdirSync(src, { withFileTypes: true });
-    for (const entry of entries) {
-      const srcPath = path.join(src, entry.name);
-      const destPath = path.join(dest, entry.name);
-      if (entry.isDirectory()) {
-        fs.mkdirSync(destPath, { recursive: true });
-        this.copyFolder(srcPath, destPath);
-      } else {
-        // skip copying .json from template ota_packs
-        if (!destPath.includes('ota_packs')) {
-          if (!fs.existsSync(destPath)) {
-            fs.copyFileSync(srcPath, destPath);
-          }
-        }
-      }
-    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
