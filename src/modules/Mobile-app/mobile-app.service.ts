@@ -12,6 +12,8 @@ import { AppDesignService } from '../appDesign/appDesign.service';
 import { ScreenService } from '../screen/screen.service';
 import { OnboardingScreensService } from '../onboarding-screens/service/onboarding-screens.service';
 import { Repository } from '../Repositories/repository.schema'; // Add this import
+import axios from 'axios';
+import { SendNotificationDto } from './dto/send-notification.dto';
 
 @Injectable()
 export class MobileAppService {
@@ -571,4 +573,34 @@ export class MobileAppService {
       status: mobileApp.apkUrl && mobileApp.qrCodeDataUrl ? 'completed' : 'pending',
     };
   }
+
+
+  async sendNotificationToApp(mobileAppId: string, payload: SendNotificationDto) {
+    const mobileApp = await this.mobileAppModel.findById(mobileAppId).exec();
+    if (!mobileApp) throw new Error(`Mobile app ${mobileAppId} not found`);
+  
+    const topic = `app_${mobileAppId.replace(/\./g, '_')}`;
+    const serverKey = process.env.FCM_SERVER_KEY;
+    if (!serverKey) throw new Error('Missing FCM_SERVER_KEY');
+  
+    const body = {
+      to: `/topics/${topic}`,
+      notification: {
+        title: payload.title,
+        body: payload.body,
+        ...(payload.imageUrl ? { image: payload.imageUrl } : {}),
+      },
+    };
+  
+    const response = await axios.post('https://fcm.googleapis.com/fcm/send', body, {
+      headers: {
+        Authorization: `key=${serverKey}`,
+        'Content-Type': 'application/json',
+      },
+    });
+  
+    this.logger.log(`Notification sent to app ${mobileAppId} [${response.status}]`);
+    return { status: 'sent', response: response.data };
+  }
+  
 }
