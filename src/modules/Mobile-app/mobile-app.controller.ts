@@ -14,6 +14,7 @@ import { MobileAppService } from './mobile-app.service';
 import { CreateMobileAppDto } from './dto/create-mobile-app.dto';
 import { AppDesign } from '../appDesign/appDesign.schema';
 import { AppLayout } from '../appLayout/appLayout.schema';
+import { SendNotificationDto } from './dto/send-notification.dto';
 
 @Controller('mobile-app')
 export class MobileAppController {
@@ -101,32 +102,36 @@ export class MobileAppController {
     @Param('id') mobileAppId: string,
     @Query('otaOnly') otaOnly: string,
     @Query('forceRebuild') forceRebuild: string,
-    @Query('forceOtaUpdate') forceOtaUpdate: string
+    @Query('forceOtaUpdate') forceOtaUpdate: string,
   ) {
     try {
       // 1) Retrieve all data needed to build the Flutter application
-      const fullData = await this.mobileAppService.getFullMobileAppData(mobileAppId);
+      const fullData =
+        await this.mobileAppService.getFullMobileAppData(mobileAppId);
 
       // Convert query string parameters to boolean
       const updateOnlyOta = otaOnly === 'true';
       const shouldForceRebuild = forceRebuild === 'true';
       // New parameter to force OTA update without rebuild
       const shouldForceOtaUpdate = forceOtaUpdate === 'true';
-      
-      this.logger.log(`Generating app with otaOnly=${updateOnlyOta}, forceRebuild=${shouldForceRebuild}, forceOtaUpdate=${shouldForceOtaUpdate}`);
+
+      this.logger.log(
+        `Generating app with otaOnly=${updateOnlyOta}, forceRebuild=${shouldForceRebuild}, forceOtaUpdate=${shouldForceOtaUpdate}`,
+      );
 
       // 2) Call a service method that delegates to AppGenerationService with the options
       const result = await this.mobileAppService.generateMobileApp(
-        fullData, 
-        updateOnlyOta, 
+        fullData,
+        updateOnlyOta,
         shouldForceRebuild,
-        shouldForceOtaUpdate
+        shouldForceOtaUpdate,
       );
 
       return {
-        message: updateOnlyOta && !shouldForceRebuild 
-          ? 'OTA pack update complete' 
-          : 'App generation complete',
+        message:
+          updateOnlyOta && !shouldForceRebuild
+            ? 'OTA pack update complete'
+            : 'App generation complete',
         data: result,
       };
     } catch (error) {
@@ -145,7 +150,10 @@ export class MobileAppController {
     @Body() body: { apkUrl: string },
   ) {
     try {
-      const result = await this.mobileAppService.updateBuildResult(mobileAppId, body.apkUrl);
+      const result = await this.mobileAppService.updateBuildResult(
+        mobileAppId,
+        body.apkUrl,
+      );
       return {
         message: 'Build result updated successfully',
         data: result,
@@ -172,5 +180,13 @@ export class MobileAppController {
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
+  }
+
+  @Post(':id/push')
+  async sendPush(
+    @Param('id') mobileAppId: string,
+    @Body() payload: SendNotificationDto,
+  ) {
+    return this.mobileAppService.sendNotificationToApp(mobileAppId, payload);
   }
 }
