@@ -15,6 +15,7 @@ import { WidgetModule } from './modules/widget/widget.module';
 import { WidgetScreenModule } from './modules/widgetscreen/widgetscreen.module';
 import { HeaderModule } from './modules/header/header.module';
 import { ImageKitService } from './shared/imagekit.service';
+import { EditorialPagesModule } from './modules/editorial-pages/editorial-pages.module';
 
 
 @Module({
@@ -31,7 +32,8 @@ import { ImageKitService } from './shared/imagekit.service';
     ImagesModule,
     WidgetModule,
     WidgetScreenModule,
-    HeaderModule, // Added HeaderModule
+    HeaderModule,
+    EditorialPagesModule
   ],
   providers: [LiveUpdatesGateway, ImageKitService],
 })
