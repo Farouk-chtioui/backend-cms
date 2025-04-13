@@ -46,7 +46,7 @@ export class AppGenerationService {
 
       const appId = realId;
       const workingDir = path.join(
-        'C:\\Users\\WT\\Desktop\\PFE PROJECT\\flutter_builds',
+        'C:\\Users\\MSI\\Desktop\\PFE\\build',
         appId
       );
 

@@ -49,7 +49,14 @@ export class UsersController {
     }
 
     try {
-      const newUser = await this.usersService.create(email, username, password, profileImage);
+      // For public registration, always use 'user' role - admin role can only be set via the .env file
+      const newUser = await this.usersService.create(
+        email, 
+        username, 
+        password, 
+        'user', // Always force 'user' role for public registration
+        profileImage
+      );
       return { message: 'User registered successfully', userId: newUser._id };
     } catch (error) {
       throw new BadRequestException(error.message);
@@ -74,11 +81,13 @@ export class UsersController {
       throw new BadRequestException('Invalid email or password');
     }
 
-    const token = jwt.sign({ id: user._id, email: user.email }, process.env.JWT_SECRET, {
-      expiresIn: '1h',
-    });
+    const token = jwt.sign(
+      { id: user._id, email: user.email, role: user.role }, // Include role in JWT payload
+      process.env.JWT_SECRET, 
+      { expiresIn: '1h' }
+    );
 
-    return { message: 'Login successful', token };
+    return { message: 'Login successful', token, role: user.role }; // Return role in response
   }
 
   @Get(':userId')

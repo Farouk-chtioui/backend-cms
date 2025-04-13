@@ -14,15 +14,27 @@ export async function seedAdminUser(app: INestApplication) {
 
   try {
     // Attempt to find existing admin account
-    await usersService.findOneByEmail(adminEmail);
-    logger.log('Admin account already exists');
-  } catch (error) {
-    // Not found, create admin account
     try {
-      const newAdmin = await usersService.create(adminEmail, 'admin', adminPassword,'admin');
+      const existingAdmin = await usersService.findOneByEmail(adminEmail);
+      
+      // If admin exists but doesn't have admin role, update it
+      if (existingAdmin.role !== 'admin') {
+        await usersService.updateUser(existingAdmin._id.toString(), { role: 'admin' });
+        logger.log(`Updated existing user ${adminEmail} to have admin role`);
+      } else {
+        logger.log('Admin account already exists with correct role');
+      }
+    } catch (error) {
+      // Not found, create admin account
+      const newAdmin = await usersService.create(
+        adminEmail, 
+        'admin', 
+        adminPassword,
+        'admin' // Explicitly set admin role
+      );
       logger.log(`Admin account created with ID: ${newAdmin._id}`);
-    } catch (creationError) {
-      logger.error('Error creating admin account', creationError);
     }
+  } catch (creationError) {
+    logger.error('Error managing admin account', creationError);
   }
 }
