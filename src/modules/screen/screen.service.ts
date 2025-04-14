@@ -94,21 +94,13 @@ export class ScreenService {
     try {
       this.logger.debug(`Finding screens for appId: ${appId}`);
       
+      // First fetch screens without populate to avoid issues with null widgetScreenId
       const screens = await this.screenModel
         .find({ appId: new Types.ObjectId(appId) })
         .sort({ 'metadata.order': 1 })
-        .populate({
-          path: 'widgetScreenId',
-          populate: {
-            path: 'widgets',
-            populate: {
-              path: 'content'  // Populate the content of each widget
-            }
-          }
-        })
         .exec();
       
-      this.logger.debug(`Found ${screens.length} screens with populated widgets for appId ${appId}`);
+      this.logger.debug(`Found ${screens.length} screens for appId ${appId}`);
       return screens;
     } catch (error) {
       this.logger.error(`Error finding screens by appId: ${error.message}`);
