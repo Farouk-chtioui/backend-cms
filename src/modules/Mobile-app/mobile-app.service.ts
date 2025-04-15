@@ -1,4 +1,4 @@
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import mongoose, { Model, Types } from 'mongoose';
 import { MobileApp } from './mobile-app.schema';
@@ -12,6 +12,7 @@ import { AppDesignService } from '../appDesign/appDesign.service';
 import { ScreenService } from '../screen/screen.service';
 import { OnboardingScreensService } from '../onboarding-screens/service/onboarding-screens.service';
 import { Repository } from '../Repositories/repository.schema'; // Add this import
+import { Widget } from '../widget/interfaces/widget.interface'; // Add Widget interface import
 
 @Injectable()
 export class MobileAppService {
@@ -21,7 +22,8 @@ export class MobileAppService {
     @InjectModel(MobileApp.name) private mobileAppModel: Model<MobileApp>,
     @InjectModel(AppDesign.name) private appDesignModel: Model<AppDesign>,
     @InjectModel('AppLayout') private appLayoutModel: Model<AppLayout>,
-    @InjectModel(Repository.name) private repositoryModel: Model<Repository>, // Add repository model
+    @InjectModel(Repository.name) private repositoryModel: Model<Repository>, 
+    @InjectModel('Widget') private widgetModel: Model<Widget>, // Add Widget model
     private readonly appGenerationService: AppGenerationService,
     private readonly appLayoutService: AppLayoutService,
     private readonly appDesignService: AppDesignService,
@@ -372,49 +374,48 @@ export class MobileAppService {
     try {
       const mobileApp = await this.mobileAppModel.findById(mobileAppId).exec();
       if (!mobileApp) {
-        throw new BadRequestException(`Mobile app with ID ${mobileAppId} not found`);
+        throw new NotFoundException(`Mobile app with id ${mobileAppId} not found`);
       }
       this.logger.debug(`Finding screens for mobileAppId: ${mobileAppId}`);
 
       // Find repository information for this mobile app
-      const repository = await this.repositoryModel.findOne({ mobileAppId }).exec();
+      let repository = await this.repositoryModel.findOne({ mobileAppId }).exec();
       
       // Log repository information for debugging
       if (repository) {
-        this.logger.log(`Found repository for mobile app ${mobileAppId}: ${repository.repositoryName}`);
+        this.logger.debug(`Found repository for mobile app: ${repository.repositoryName}`);
       } else {
         this.logger.warn(`No repository found for mobile app ${mobileAppId}. Trying to find by repositoryId...`);
         // Try to find by repositoryId as a fallback
         if (mobileApp.repositoryId) {
-          const repoById = await this.repositoryModel.findById(mobileApp.repositoryId).exec();
-          if (repoById) {
-            this.logger.log(`Found repository by ID for mobile app ${mobileAppId}: ${repoById.repositoryName}`);
-            // Use this repository instead
-            return this.buildFullMobileAppResponse(mobileApp, repoById);
+          const repoByRepoId = await this.repositoryModel.findById(mobileApp.repositoryId).exec();
+          if (repoByRepoId) {
+            this.logger.debug(`Found repository by repositoryId: ${repoByRepoId.repositoryName}`);
+            repository = repoByRepoId;
           }
         }
       }
       
-      const [appDesign, appLayout, screens, onboardingScreens] = await Promise.all([
+      // Find all app data elements, using OTA-optimized methods
+      const [appDesign, appLayout, onboardingScreens] = await Promise.all([
         this.appDesignModel.findById(mobileApp.appDesignId).exec(),
         this.appLayoutModel.findById(mobileApp.appLayoutId).exec(),
-        this.screenService.findByAppId(mobileAppId),
         this.onboardingScreensService.findAllByAppId(mobileAppId),
       ]);
 
+      // Get screens with the OTA-specific method that prevents widget population
+      const screens = await this.screenService.findByAppIdForOTA(mobileAppId);
+      
       this.logger.debug(`Found ${screens.length} screens and ${onboardingScreens.length} onboarding screens`);
+      
+      // Get all widgets for this mobile app as a separate array
+      const allAppWidgets = await this.widgetModel.find(
+        { mobileAppId }
+      ).lean().exec();
+      
+      this.logger.debug(`Found ${allAppWidgets.length} widgets for the mobile app`);
 
-      const screensWithWidgets = await Promise.all(
-        screens.map(async (screen) => {
-          try {
-            return await this.screenService.getScreenWithWidgets(screen._id.toString());
-          } catch (error) {
-            this.logger.error(`Error populating widgets for screen ${screen._id}: ${error.message}`);
-            return screen;
-          }
-        })
-      );
-
+      // Prepare mobile app data (excluding references we'll replace with actual data)
       const mobileAppData = {
         ...mobileApp.toObject(),
         appDesignId: undefined,
@@ -427,8 +428,9 @@ export class MobileAppService {
         mobileApp: mobileAppData,
         appDesign,
         appLayout,
-        screens: screensWithWidgets,
+        screens, // Screens with just widget IDs, not populated widgets
         onboardingScreens,
+        widgets: allAppWidgets, // Include all widgets as a separate array
         repository: repository ? {
           repositoryName: repository.repositoryName,
           name: repository.repositoryName, // Include both for backward compatibility

@@ -94,14 +94,34 @@ export class ScreenService {
     try {
       this.logger.debug(`Finding screens for appId: ${appId}`);
       
-      // First fetch screens without populate to avoid issues with null widgetScreenId
+      // Get screens with plain mongoose find (no populate at all)
       const screens = await this.screenModel
         .find({ appId: new Types.ObjectId(appId) })
-        .sort({ 'metadata.order': 1 })
+        .lean()
         .exec();
       
-      this.logger.debug(`Found ${screens.length} screens for appId ${appId}`);
-      return screens;
+      // Manually ensure widgetScreenId is always just an ID string
+      const cleanScreens = screens.map(screen => {
+        // If widgetScreenId exists and is an object (somehow), convert to string ID
+        if (screen.widgetScreenId && typeof screen.widgetScreenId === 'object') {
+          // If it has an _id property, use that
+          if (screen.widgetScreenId._id) {
+            return {
+              ...screen,
+              widgetScreenId: screen.widgetScreenId._id.toString()
+            };
+          }
+          // Otherwise stringify the object ID itself
+          return {
+            ...screen,
+            widgetScreenId: screen.widgetScreenId.toString()
+          };
+        }
+        return screen;
+      }) as Screen[];
+      
+      this.logger.debug(`Found ${cleanScreens.length} screens for appId ${appId}`);
+      return cleanScreens;
     } catch (error) {
       this.logger.error(`Error finding screens by appId: ${error.message}`);
       throw new BadRequestException('Invalid app ID or error finding screens');
@@ -408,27 +428,57 @@ export class ScreenService {
 
   async getScreenWithWidgets(screenId: string): Promise<Screen> {
     try {
+      // Find the screen by ID without populating any widgets
       const screen = await this.screenModel
         .findById(screenId)
-        .populate({
-          path: 'widgetScreenId',
-          populate: {
-            path: 'widgets',
-            populate: {
-              path: 'content'  // Populate the content of each widget
-            }
-          }
-        })
         .exec();
 
       if (!screen) {
         throw new NotFoundException(`Screen with ID ${screenId} not found`);
       }
 
+      // Return the screen without populating the widget data
       return screen;
     } catch (error) {
-      this.logger.error(`Error getting screen with widgets: ${error.message}`);
-      throw new BadRequestException('Failed to get screen with widgets');
+      this.logger.error(`Error getting screen: ${error.message}`);
+      throw new BadRequestException('Failed to get screen');
+    }
+  }
+
+  // A dedicated method for OTA that ensures no widget data is populated
+  async findByAppIdForOTA(appId: string): Promise<any[]> {
+    try {
+      this.logger.debug(`Finding screens for OTA with appId: ${appId}`);
+      
+      // Explicitly disable population with a lean query
+      const screens = await this.screenModel
+        .find({ appId: new Types.ObjectId(appId) })
+        .select('-__v') // Exclude Mongoose versioning
+        .lean({ virtuals: false }) // Get plain objects with no virtuals
+        .exec();
+      
+      // Ensure widgetScreenId is always just a string ID
+      const cleanScreens = screens.map(screen => {
+        // Create a clean copy of the screen
+        const cleanScreen = { ...screen };
+        
+        // Handle populated widgetScreenId objects by extracting just the ID
+        if (cleanScreen.widgetScreenId) {
+          if (typeof cleanScreen.widgetScreenId === 'object') {
+            cleanScreen.widgetScreenId = cleanScreen.widgetScreenId._id 
+              ? new Types.ObjectId(cleanScreen.widgetScreenId._id.toString())
+              : new Types.ObjectId(cleanScreen.widgetScreenId.toString());
+          }
+        }
+        
+        return cleanScreen;
+      });
+      
+      this.logger.debug(`Found ${cleanScreens.length} clean screens for OTA with appId ${appId}`);
+      return cleanScreens;
+    } catch (error) {
+      this.logger.error(`Error finding screens for OTA: ${error.message}`);
+      throw new BadRequestException('Failed to get screens for OTA data');
     }
   }
 }

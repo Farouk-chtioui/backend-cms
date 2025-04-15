@@ -46,7 +46,7 @@ export class AppGenerationService {
 
       const appId = realId;
       const workingDir = path.join(
-        'C:\\Users\\MSI\\Desktop\\PFE\\build',
+        process.env.APP_BUILD_DIR || path.join(process.cwd(), 'build'),
         appId
       );
 
@@ -65,27 +65,8 @@ export class AppGenerationService {
         `Update only OTA: ${updateOnlyOta}, Force rebuild: ${forceRebuild}, Force OTA update: ${forceOtaUpdate}`
       );
 
-      // 1) Ensure local working directory is set up
-      let hasSetupError = false;
-      let isNewApp = false;
-      if (!fs.existsSync(workingDir)) {
-        try {
-          isNewApp = true;
-          fs.mkdirSync(workingDir, { recursive: true });
-          this.logger.log(`Created new working directory: ${workingDir}`);
-          // Clone flutter_template into that folder
-          await this.cloneFlutterTemplate(workingDir);
-        } catch (err) {
-          hasSetupError = true;
-          this.logger.error(`Setup failed, cannot clone flutter template: ${err.message}`);
-        }
-      } else {
-        this.logger.log(`Working directory already exists: ${workingDir}`);
-      }
-
-      if (hasSetupError) {
-        throw new Error('Aborting because of errors in setup steps.');
-      }
+      // Skip directory creation and template cloning
+      let isNewApp = true;
 
       // 2) Generate local JSON (OTA packs)
       const otaPacks = this.splitIntoOTAPacks(fullAppData);
@@ -576,11 +557,26 @@ export class AppGenerationService {
   // -----------------------------------------------------------------
   private generateOtaEndpoints(otaUploads: Record<string, string>): Record<string, string> {
     const endpoints: Record<string, string> = {};
+    
+    // Make sure all required packs have endpoints, including widgets
+    const requiredPacks = ['design', 'layout', 'screens', 'onboarding', 'config', 'widgets'];
+    
+    // First process all uploads we have
     for (const fileName in otaUploads) {
       const fileId = otaUploads[fileName];
       const packKey = fileName.replace('_pack.json', '');
       endpoints[packKey] = `${process.env.APPWRITE_ENDPOINT}/storage/buckets/${process.env.APPWRITE_OTA_BUCKET_ID}/files/${fileId}/view?project=${process.env.APPWRITE_PROJECT_ID}`;
     }
+    
+    // Check for any missing required packs
+    for (const requiredPack of requiredPacks) {
+      const fileName = `${requiredPack}_pack.json`;
+      if (!endpoints[requiredPack] && otaUploads[fileName]) {
+        const fileId = otaUploads[fileName];
+        endpoints[requiredPack] = `${process.env.APPWRITE_ENDPOINT}/storage/buckets/${process.env.APPWRITE_OTA_BUCKET_ID}/files/${fileId}/view?project=${process.env.APPWRITE_PROJECT_ID}`;
+      }
+    }
+    
     return endpoints;
   }
 
@@ -735,12 +731,57 @@ export class AppGenerationService {
   // Break down config object into multiple packs
   // -----------------------------------------------------------------
   private splitIntoOTAPacks(fullAppData: any): Record<string, any> {
+    // Clean up screens data to remove widget information
+    const cleanScreens = (fullAppData.screens || []).map(screen => {
+      // Create a clean screen with essential properties only
+      const cleanScreen = {
+        _id: screen._id,
+        name: screen.name,
+        route: screen.route,
+        appId: screen.appId,
+        screenType: screen.screenType,
+        settings: screen.settings,
+        isActive: screen.isActive,
+        description: screen.description,
+        tags: screen.tags,
+        metadata: screen.metadata,
+        widgetScreenId: screen.widgetScreenId
+      };
+      
+      // Ensure widgetScreenId is just an ID, not a populated object
+      if (screen.widgetScreenId && typeof screen.widgetScreenId === 'object') {
+        cleanScreen.widgetScreenId = screen.widgetScreenId._id || screen.widgetScreenId;
+      }
+      
+      return cleanScreen;
+    });
+
+    // Process widgets to make them more suitable for OTA updates
+    const processedWidgets = (fullAppData.widgets || []).map(widget => {
+      // Create a clean widget without excessive references
+      return {
+        _id: widget._id,
+        name: widget.name,
+        type: widget.type,
+        category: widget.category,
+        content: widget.content,
+        style: widget.style,
+        mobileOptions: widget.mobileOptions,
+        interactions: widget.interactions,
+        performance: widget.performance,
+        accessibility: widget.accessibility,
+        mobileAppId: widget.mobileAppId
+      };
+    });
+
     const packs: Record<string, any> = {
       design: fullAppData.appDesign || {},
       layout: fullAppData.appLayout || {},
-      screens: fullAppData.screens || [],
+      screens: cleanScreens,
       onboarding: fullAppData.onboardingScreens || [],
+      widgets: processedWidgets // Use the processed widgets array
     };
+
     const mobileApp = fullAppData.mobileApp || {};
     const repository = fullAppData.repository || {};
     packs.config = {
@@ -773,6 +814,7 @@ flutter:
     - assets/ota_packs/screens_pack.json
     - assets/ota_packs/onboarding_pack.json
     - assets/ota_packs/config_pack.json
+    - assets/ota_packs/widgets_pack.json
 `;
       pubspecContent = pubspecContent.replace(
         /(flutter:\s*)/,
