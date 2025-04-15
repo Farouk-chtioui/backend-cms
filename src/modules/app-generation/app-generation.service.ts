@@ -734,8 +734,8 @@ export class AppGenerationService {
   // If you have normal screens too, you can still keep them in `screens` as is.
   // -----------------------------------------------------------------
   private splitIntoOTAPacks(fullAppData: any): Record<string, any> {
-    // Keep your existing normal screens if you want:
-    const cleanScreens = (fullAppData.screens || []).map(screen => {
+    // 1) Build “screens” (unchanged)
+    const cleanScreens = (fullAppData.screens || []).map((screen: any) => {
       const cleanScreen = {
         _id: screen._id,
         name: screen.name,
@@ -750,17 +750,16 @@ export class AppGenerationService {
         widgetScreenId: screen.widgetScreenId,
       };
       // if widgetScreenId is an object, store only ._id
-      if (screen.widgetScreenId && typeof screen.widgetScreenId === 'object') {
-        cleanScreen.widgetScreenId = screen.widgetScreenId._id || screen.widgetScreenId;
+      if (cleanScreen.widgetScreenId && typeof cleanScreen.widgetScreenId === 'object') {
+        cleanScreen.widgetScreenId = cleanScreen.widgetScreenId._id || cleanScreen.widgetScreenId;
       }
       return cleanScreen;
     });
-
-    // Build the new “widgetScreens” pack: each item has an ID plus the array of child widgets
+  
+    // 2) Build “widgetScreens” (NEW: now includes `header`)
     const processedWidgetScreens = (fullAppData.widgetScreens || []).map((ws: any) => {
-      // store the raw or cleaned array of child widgets:
+      // gather all child widgets
       const childWidgets = (ws.widgets || []).map((w: any) => {
-        // minimal widget structure
         return {
           _id: w._id,
           name: w.name,
@@ -772,36 +771,40 @@ export class AppGenerationService {
           interactions: w.interactions,
           performance: w.performance,
           accessibility: w.accessibility,
-          mobileAppId: w.mobileAppId
+          mobileAppId: w.mobileAppId,
         };
       });
-
-      // If `ws.widgetScreenId` is an object, store only `_id`
+  
+      // if `ws.widgetScreenId` is an object, store only the ._id
       const finalWsId =
         ws.widgetScreenId && typeof ws.widgetScreenId === 'object'
           ? ws.widgetScreenId._id || ws.widgetScreenId
           : ws.widgetScreenId;
-
+  
       return {
         _id: ws._id,
-        widgetScreenId: finalWsId || ws._id,  // or just always ws._id
+        widgetScreenId: finalWsId || ws._id,
         name: ws.name,
         isActive: ws.isActive,
         description: ws.description,
-        // etc. (any other fields from your WidgetScreen)
+        // the important part: include the entire header
+        header: ws.header || null,
+        // put the child widgets array
         widgets: childWidgets,
       };
     });
-
-    // Build the final packs
+  
+    // 3) Build final packs, referencing each key as needed
     const packs: Record<string, any> = {
       design: fullAppData.appDesign || {},
       layout: fullAppData.appLayout || {},
       screens: cleanScreens,
       onboarding: fullAppData.onboardingScreens || [],
-      widgetScreens: processedWidgetScreens, // <--- new pack for all WidgetScreens + widgets
+      // use the processed array with header
+      widgetScreens: processedWidgetScreens,
     };
-
+  
+    // 4) Basic config pack
     const mobileApp = fullAppData.mobileApp || {};
     const repository = fullAppData.repository || {};
     packs.config = {
@@ -812,9 +815,11 @@ export class AppGenerationService {
       repositoryDescription: repository.description || null,
       coverImage: repository.coverImage || null,
     };
-
+  
+    // 5) Return
     return packs;
   }
+  
 
   // -----------------------------------------------------------------
   // Insert references to the OTA pack assets into pubspec.yaml
