@@ -11,22 +11,36 @@ export class WidgetScreenService {
     @InjectModel('WidgetScreen') private readonly widgetScreenModel: Model<WidgetScreen>,
   ) {}
 
+  /**
+   * Create a new WidgetScreen document
+   */
   async create(createWidgetScreenDto: any): Promise<WidgetScreen> {
     const createdScreen = new this.widgetScreenModel(createWidgetScreenDto);
     return createdScreen.save();
   }
 
+  /**
+   * Find all WidgetScreens (no filtering by mobileAppId here)
+   */
   async findAll(): Promise<WidgetScreen[]> {
     return this.widgetScreenModel.find().exec();
   }
 
+  /**
+   * Find a single WidgetScreen by its ID
+   */
   async findOne(id: string): Promise<WidgetScreen> {
     const screen = await this.widgetScreenModel.findById(id).exec();
-    if (!screen)
+    if (!screen) {
       throw new NotFoundException(`WidgetScreen with id ${id} not found`);
+    }
     return screen;
   }
 
+  /**
+   * Update a WidgetScreen by ID
+   * Validates the 'header' field if present
+   */
   async update(id: string, updateWidgetScreenDto: any): Promise<WidgetScreen> {
     // If header is being updated, validate it
     if (updateWidgetScreenDto.header) {
@@ -41,26 +55,54 @@ export class WidgetScreenService {
       updateWidgetScreenDto,
       { new: true },
     );
-    if (!updatedScreen)
+    if (!updatedScreen) {
       throw new NotFoundException(`WidgetScreen with id ${id} not found`);
+    }
     return updatedScreen;
   }
 
+  /**
+   * Delete a WidgetScreen by ID
+   */
   async delete(id: string): Promise<WidgetScreen> {
     const deletedScreen = await this.widgetScreenModel.findByIdAndDelete(id);
-    if (!deletedScreen)
+    if (!deletedScreen) {
       throw new NotFoundException(`WidgetScreen with id ${id} not found`);
+    }
     return deletedScreen;
   }
 
-  // Find all WidgetScreens for a given mobileAppId
+  // --------------------------------------------------------------------------
+  // METHOD #1 (Existing): Find all WidgetScreens for a given mobileAppId,
+  //                       automatically populating the 'widgets' field.
+  //
+  // If you want to rename this for clarity, rename it to:
+  //   findAllByAppIdWithWidgets(mobileAppId: string): Promise<WidgetScreen[]>
+  // --------------------------------------------------------------------------
   async findByMobileApp(mobileAppId: string): Promise<WidgetScreen[]> {
-    return this.widgetScreenModel.find({ mobileAppId }).populate('widgets').exec();
+    // This populates the 'widgets' array in each WidgetScreen
+    return this.widgetScreenModel
+      .find({ mobileAppId })
+      .populate('widgets')
+      .exec();
   }
 
-  // Header-specific methods
+  // --------------------------------------------------------------------------
+  // METHOD #2 (Optional NEW): If you want a separate method with a clearer name
+  //                           that does exactly the same as above, just add:
+  // --------------------------------------------------------------------------
+  async findAllByAppIdWithWidgets(mobileAppId: string): Promise<WidgetScreen[]> {
+    return this.widgetScreenModel
+      .find({ mobileAppId })
+      .populate('widgets')
+      .exec();
+  }
+
+  // --------------------------------------------------------------------------
+  // Header-specific methods: update or delete the 'header' field
+  // --------------------------------------------------------------------------
   async updateHeader(id: string, header: HeaderConfig | null): Promise<WidgetScreen> {
-    // Validate header if it's not null
+    // Validate header if not null
     if (header) {
       const validationError = validateHeader(header);
       if (validationError) {
@@ -68,32 +110,28 @@ export class WidgetScreenService {
       }
     }
 
-    // Use findByIdAndUpdate instead of directly modifying the document
     const updatedScreen = await this.widgetScreenModel.findByIdAndUpdate(
       id,
       { $set: { header: header } },
       { new: true }
     );
-    
+
     if (!updatedScreen) {
       throw new NotFoundException(`WidgetScreen with id ${id} not found`);
     }
-    
     return updatedScreen;
   }
 
   async deleteHeader(id: string): Promise<WidgetScreen> {
-    // Use findByIdAndUpdate to set header to null
     const updatedScreen = await this.widgetScreenModel.findByIdAndUpdate(
       id,
       { $set: { header: null } },
       { new: true }
     );
-    
+
     if (!updatedScreen) {
       throw new NotFoundException(`WidgetScreen with id ${id} not found`);
     }
-    
     return updatedScreen;
   }
 }
