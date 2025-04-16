@@ -30,7 +30,7 @@ export class AppGenerationService {
   }
 
   // -----------------------------------------------------------------
-  // UPDATED METHOD: Now takes a separate `forceOtaUpdate` param
+  // Now takes a `forceOtaUpdate` param as well
   // -----------------------------------------------------------------
   async generateOrUpdateFlutterApp(
     fullAppData: any, 
@@ -90,19 +90,17 @@ export class AppGenerationService {
       // 3) Check if an APK is already in Appwrite
       const existingApkFileId = await this.checkExistingApk(appId);
 
-      // 4) Decide if we only want an OTA update (based on user choice, not presence of an APK)
+      // 4) Decide if we only want an OTA update
       const shouldUpdateOtaOnly = updateOnlyOta && !forceRebuild;
 
       // 5) Check if OTA has any changes
-      //    Now we do NOT override with forceRebuild; we only override if forceOtaUpdate is true
       const hasOtaChanges = await this.checkOtaChanges(workingDir, appId, forceOtaUpdate);
       this.logger.log(`OTA changes detected: ${hasOtaChanges}`);
 
       // 6) If user requested OTA-only and no changes, skip everything
       if (shouldUpdateOtaOnly && !hasOtaChanges) {
         this.logger.log(
-          'User requested OTA-only update, but no changes found in OTA packs. ' +
-          'Skipping build & upload.'
+          'User requested OTA-only update, but no changes found in OTA packs. Skipping build & upload.'
         );
 
         // Return existing APK info if we have one
@@ -130,14 +128,13 @@ export class AppGenerationService {
       // 7) Upload OTA packs if changed or forced
       let uploadResults = {};
       let changedSomething = hasOtaChanges;
-      // Now we pass `forceOtaUpdate` instead of `forceRebuild` to the uploader
       if (hasOtaChanges || forceOtaUpdate) {
         const result = await this.uploadOtaPacksToCloud(workingDir, appId, forceOtaUpdate);
         uploadResults = result.uploadResults;
         changedSomething = result.changedSomething;
       }
 
-      // 8) Build endpoints for the new or existing OTA files
+      // 8) Build endpoints for new or existing OTA files
       const otaEndpoints = this.generateOtaEndpoints(uploadResults);
       const endpointsFilePath = path.join(packsDir, 'endpoints.json');
       await fs.promises.writeFile(
@@ -146,7 +143,7 @@ export class AppGenerationService {
         'utf8'
       );
 
-      // 8a) Also upload endpoints.json with a stable ID
+      // 8a) Upload endpoints.json with a stable ID
       try {
         const client = new Client()
           .setEndpoint(process.env.APPWRITE_ENDPOINT)
@@ -180,7 +177,7 @@ export class AppGenerationService {
           new File([blob], customFileName, { type: 'application/json' })
         );
 
-        // Also add a “otaEndpoints.global” link that references endpoints.json
+        // Also add a “otaEndpoints.global” link
         otaEndpoints['global'] = `${process.env.APPWRITE_ENDPOINT}/storage/buckets/${process.env.APPWRITE_OTA_BUCKET_ID}/files/${stableEndpointsId}/view?project=${process.env.APPWRITE_PROJECT_ID}`;
       } catch (err) {
         this.logger.error(`Failed uploading endpoints file: ${err.message}`);
@@ -190,7 +187,6 @@ export class AppGenerationService {
       this.updatePubspecYaml(workingDir);
 
       // 10) If we only needed OTA or if no new changes while an APK exists, skip full build
-      //     i.e. user specifically said “OTA only”, or we have an existing APK and nothing changed
       const skipFullBuild = shouldUpdateOtaOnly || (!changedSomething && existingApkFileId);
       if (skipFullBuild) {
         let apkDownloadUrl: string | null = null;
@@ -271,9 +267,7 @@ export class AppGenerationService {
   }
 
   // -----------------------------------------------------------------
-  // Checks if there are changes to any local OTA JSON files by MD5.
-  // We only override this with `true` if `forceOtaUpdate` is true,
-  // meaning user specifically wants to forcibly re-upload everything.
+  // Checks local OTA JSON files by MD5, or uses forceOtaUpdate
   // -----------------------------------------------------------------
   private async checkOtaChanges(
     workingDir: string,
@@ -293,7 +287,6 @@ export class AppGenerationService {
       const contentHash = crypto.createHash('md5').update(rawContent).digest('hex');
       const cacheKey = `${appId}_${fileName}`;
 
-      // If user forced OTA update or local file MD5 differs from what's cached
       if (forceOtaUpdate || this.otaPackHashCache.get(cacheKey) !== contentHash) {
         return true;
       }
@@ -312,7 +305,7 @@ export class AppGenerationService {
   }
 
   // -----------------------------------------------------------------
-  // Upload changed OTA packs to Appwrite (plus forced if `forceOtaUpdate`)
+  // Upload changed OTA packs to Appwrite
   // -----------------------------------------------------------------
   async uploadOtaPacksToCloud(
     workingDir: string,
@@ -445,7 +438,7 @@ export class AppGenerationService {
   }
 
   // -----------------------------------------------------------------
-  // Check if there's an existing zip for the app in Appwrite
+  // Check if there's an existing ZIP for the app in Appwrite
   // -----------------------------------------------------------------
   async checkExistingApk(mobileAppId: string): Promise<string | null> {
     try {
@@ -554,21 +547,40 @@ export class AppGenerationService {
 
   // -----------------------------------------------------------------
   // Generate endpoints for each OTA pack
+  // (Replace "widgets" with "widgetScreens")
   // -----------------------------------------------------------------
   private generateOtaEndpoints(otaUploads: Record<string, string>): Record<string, string> {
     const endpoints: Record<string, string> = {};
     
+<<<<<<< HEAD
     // Make sure all required packs have endpoints, including widgets
     const requiredPacks = ['design', 'layout', 'screens', 'onboarding', 'config', 'widgets'];
     
     // First process all uploads we have
+=======
+    // We need the following packs at minimum
+    const requiredPacks = [
+      'design',
+      'layout',
+      'screens',
+      'onboarding',
+      'config',
+      'widgetScreens'
+    ];
+    
+    // For each file we uploaded, create an endpoint
+>>>>>>> 8f8dad58a824b47aa65497cdf5367b309a42588f
     for (const fileName in otaUploads) {
       const fileId = otaUploads[fileName];
       const packKey = fileName.replace('_pack.json', '');
       endpoints[packKey] = `${process.env.APPWRITE_ENDPOINT}/storage/buckets/${process.env.APPWRITE_OTA_BUCKET_ID}/files/${fileId}/view?project=${process.env.APPWRITE_PROJECT_ID}`;
     }
     
+<<<<<<< HEAD
     // Check for any missing required packs
+=======
+    // Make sure the required packs all exist in `endpoints`
+>>>>>>> 8f8dad58a824b47aa65497cdf5367b309a42588f
     for (const requiredPack of requiredPacks) {
       const fileName = `${requiredPack}_pack.json`;
       if (!endpoints[requiredPack] && otaUploads[fileName]) {
@@ -728,12 +740,19 @@ export class AppGenerationService {
   }
 
   // -----------------------------------------------------------------
-  // Break down config object into multiple packs
+  // UPDATED: Instead of separate “widgets” OTA, we create a single “widgetScreens” pack
+  // containing each WidgetScreen + its child widgets. 
+  // If you have normal screens too, you can still keep them in `screens` as is.
   // -----------------------------------------------------------------
   private splitIntoOTAPacks(fullAppData: any): Record<string, any> {
+<<<<<<< HEAD
     // Clean up screens data to remove widget information
     const cleanScreens = (fullAppData.screens || []).map(screen => {
       // Create a clean screen with essential properties only
+=======
+    // 1) Build “screens” (unchanged)
+    const cleanScreens = (fullAppData.screens || []).map((screen: any) => {
+>>>>>>> 8f8dad58a824b47aa65497cdf5367b309a42588f
       const cleanScreen = {
         _id: screen._id,
         name: screen.name,
@@ -745,6 +764,7 @@ export class AppGenerationService {
         description: screen.description,
         tags: screen.tags,
         metadata: screen.metadata,
+<<<<<<< HEAD
         widgetScreenId: screen.widgetScreenId
       };
       
@@ -774,14 +794,72 @@ export class AppGenerationService {
       };
     });
 
+=======
+        widgetScreenId: screen.widgetScreenId,
+      };
+      // if widgetScreenId is an object, store only ._id
+      if (cleanScreen.widgetScreenId && typeof cleanScreen.widgetScreenId === 'object') {
+        cleanScreen.widgetScreenId = cleanScreen.widgetScreenId._id || cleanScreen.widgetScreenId;
+      }
+      return cleanScreen;
+    });
+  
+    // 2) Build “widgetScreens” (NEW: now includes `header`)
+    const processedWidgetScreens = (fullAppData.widgetScreens || []).map((ws: any) => {
+      // gather all child widgets
+      const childWidgets = (ws.widgets || []).map((w: any) => {
+        return {
+          _id: w._id,
+          name: w.name,
+          type: w.type,
+          category: w.category,
+          content: w.content,
+          style: w.style,
+          mobileOptions: w.mobileOptions,
+          interactions: w.interactions,
+          performance: w.performance,
+          accessibility: w.accessibility,
+          mobileAppId: w.mobileAppId,
+        };
+      });
+  
+      // if `ws.widgetScreenId` is an object, store only the ._id
+      const finalWsId =
+        ws.widgetScreenId && typeof ws.widgetScreenId === 'object'
+          ? ws.widgetScreenId._id || ws.widgetScreenId
+          : ws.widgetScreenId;
+  
+      return {
+        _id: ws._id,
+        widgetScreenId: finalWsId || ws._id,
+        name: ws.name,
+        isActive: ws.isActive,
+        description: ws.description,
+        // the important part: include the entire header
+        header: ws.header || null,
+        // put the child widgets array
+        widgets: childWidgets,
+      };
+    });
+  
+    // 3) Build final packs, referencing each key as needed
+>>>>>>> 8f8dad58a824b47aa65497cdf5367b309a42588f
     const packs: Record<string, any> = {
       design: fullAppData.appDesign || {},
       layout: fullAppData.appLayout || {},
       screens: cleanScreens,
       onboarding: fullAppData.onboardingScreens || [],
+<<<<<<< HEAD
       widgets: processedWidgets // Use the processed widgets array
     };
 
+=======
+      // use the processed array with header
+      widgetScreens: processedWidgetScreens,
+    };
+  
+    // 4) Basic config pack
+>>>>>>> 8f8dad58a824b47aa65497cdf5367b309a42588f
     const mobileApp = fullAppData.mobileApp || {};
     const repository = fullAppData.repository || {};
     packs.config = {
@@ -792,11 +870,15 @@ export class AppGenerationService {
       repositoryDescription: repository.description || null,
       coverImage: repository.coverImage || null,
     };
+  
+    // 5) Return
     return packs;
   }
+  
 
   // -----------------------------------------------------------------
   // Insert references to the OTA pack assets into pubspec.yaml
+  // (Now references “widgetScreens_pack.json” instead of “widgets_pack.json”)
   // -----------------------------------------------------------------
   private updatePubspecYaml(workingDir: string) {
     const pubspecPath = path.join(workingDir, 'pubspec.yaml');
@@ -804,6 +886,7 @@ export class AppGenerationService {
 
     let pubspecContent = fs.readFileSync(pubspecPath, 'utf8');
     if (!pubspecContent.includes('assets/ota_packs/')) {
+      // We remove the line for “widgets_pack.json” and add “widgetScreens_pack.json”
       const assetConfig = `
 flutter:
   assets:
@@ -814,7 +897,11 @@ flutter:
     - assets/ota_packs/screens_pack.json
     - assets/ota_packs/onboarding_pack.json
     - assets/ota_packs/config_pack.json
+<<<<<<< HEAD
     - assets/ota_packs/widgets_pack.json
+=======
+    - assets/ota_packs/widgetScreens_pack.json
+>>>>>>> 8f8dad58a824b47aa65497cdf5367b309a42588f
 `;
       pubspecContent = pubspecContent.replace(
         /(flutter:\s*)/,
