@@ -219,18 +219,13 @@ export class AppGenerationService {
         };
       }
 
-      // 11) If forcing a rebuild, remove the existing APK first
-      if (forceRebuild && existingApkFileId) {
-        await this.deleteExistingApk(existingApkFileId);
-        this.logger.log(`Force rebuild: deleted existing APK ID = ${existingApkFileId}`);
-      }
-
-      // 12) Trigger GH Actions, wait for artifact, then upload
+      // 11) Trigger GH Actions, wait for artifact, then upload
+      // Removed preemptive APK deletion, will handle it during download/upload
       await this.triggerBuildWorkflow(fullAppData, otaEndpoints);
       const githubArtifact = await this.trackWorkflow(appId);
-      const apkFileId = await this.downloadAndUploadApkToAppwrite(githubArtifact, appId);
+      const apkFileId = await this.downloadAndUploadApkToAppwrite(githubArtifact, appId, existingApkFileId, forceRebuild);
 
-      // 13) Create final download/QR codes
+      // 12) Create final download/QR codes
       const apkDownloadUrl = `${process.env.APPWRITE_ENDPOINT}/storage/buckets/${process.env.APPWRITE_APK_BUCKET_ID}/files/${apkFileId}/download?project=${process.env.APPWRITE_PROJECT_ID}&mode=admin`;
       const publicDownloadUrl = `${process.env.APPWRITE_ENDPOINT}/storage/buckets/${process.env.APPWRITE_APK_BUCKET_ID}/files/${apkFileId}/download?project=${process.env.APPWRITE_PROJECT_ID}`;
       const qrCodeDataUrl = await QRCode.toDataURL(publicDownloadUrl);
@@ -487,7 +482,7 @@ export class AppGenerationService {
   // -----------------------------------------------------------------
   // Download artifact from GitHub, store in Appwrite as a ZIP
   // -----------------------------------------------------------------
-  async downloadAndUploadApkToAppwrite(githubArtifact: any, mobileAppId: string) {
+  async downloadAndUploadApkToAppwrite(githubArtifact: any, mobileAppId: string, existingApkFileId: string | null, forceRebuild: boolean) {
     const artifactId = githubArtifact.id;
     const downloadUrl = `https://api.github.com/repos/Farouk-chtioui/flutter_template/actions/artifacts/${artifactId}/zip`;
     this.logger.log(`Downloading artifact from GitHub: ${downloadUrl}`);
@@ -507,6 +502,13 @@ export class AppGenerationService {
         responseType: 'arraybuffer',
       });
       data = response.data;
+      
+      // Only delete the existing APK after we've successfully downloaded the new one
+      if (existingApkFileId && forceRebuild) {
+        this.logger.log(`Successfully downloaded new APK, now deleting old APK ID = ${existingApkFileId}`);
+        await this.deleteExistingApk(existingApkFileId);
+      }
+      
     } catch (err: any) {
       if (err.response?.status === 404) {
         this.logger.error(
