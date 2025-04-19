@@ -3,6 +3,16 @@ import { Document, Types } from 'mongoose';
 import { AppDesign } from '../appDesign/appDesign.schema';
 import { AppLayout } from '../appLayout/appLayout.schema';
 
+// Define a nested schema for the last publish info
+@Schema({ _id: false })
+export class LastPublishInfo {
+  @Prop({ required: true })
+  username: string;
+
+  @Prop({ required: true, default: Date.now })
+  timestamp: Date;
+}
+
 @Schema()
 export class MobileApp extends Document {
   @Prop({ required: true })
@@ -29,6 +39,10 @@ export class MobileApp extends Document {
 
   @Prop({ default: null })
   qrCodeDataUrl: string;
+
+  // New property for last publish information
+  @Prop({ type: LastPublishInfo, default: null })
+  lastPublish: LastPublishInfo;
 }
 
 export const MobileAppSchema = SchemaFactory.createForClass(MobileApp);

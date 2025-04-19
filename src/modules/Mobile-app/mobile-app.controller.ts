@@ -15,6 +15,11 @@ import { CreateMobileAppDto } from './dto/create-mobile-app.dto';
 import { AppDesign } from '../appDesign/appDesign.schema';
 import { AppLayout } from '../appLayout/appLayout.schema';
 
+// Define a DTO for the generate endpoint
+class GenerateAppDto {
+  username?: string;
+}
+
 @Controller('mobile-app')
 export class MobileAppController {
   private readonly logger = new Logger(MobileAppController.name);
@@ -101,9 +106,13 @@ export class MobileAppController {
     @Param('id') mobileAppId: string,
     @Query('otaOnly') otaOnly: string,
     @Query('forceRebuild') forceRebuild: string,
-    @Query('forceOtaUpdate') forceOtaUpdate: string
+    @Query('forceOtaUpdate') forceOtaUpdate: string,
+    @Body() generateAppDto: GenerateAppDto
   ) {
     try {
+      // Extract username from request body, defaulting to "Unknown User"
+      const username = generateAppDto?.username || 'Unknown User';
+      
       // 1) Retrieve all data needed to build the Flutter application
       const fullData = await this.mobileAppService.getFullMobileAppData(mobileAppId);
 
@@ -113,14 +122,15 @@ export class MobileAppController {
       // New parameter to force OTA update without rebuild
       const shouldForceOtaUpdate = forceOtaUpdate === 'true';
       
-      this.logger.log(`Generating app with otaOnly=${updateOnlyOta}, forceRebuild=${shouldForceRebuild}, forceOtaUpdate=${shouldForceOtaUpdate}`);
+      this.logger.log(`Generating app with otaOnly=${updateOnlyOta}, forceRebuild=${shouldForceRebuild}, forceOtaUpdate=${shouldForceOtaUpdate}, username=${username}`);
 
       // 2) Call a service method that delegates to AppGenerationService with the options
       const result = await this.mobileAppService.generateMobileApp(
         fullData, 
         updateOnlyOta, 
         shouldForceRebuild,
-        shouldForceOtaUpdate
+        shouldForceOtaUpdate,
+        username
       );
 
       return {
@@ -169,6 +179,23 @@ export class MobileAppController {
       this.logger.error(`Failed to get build status: ${error.message}`);
       throw new HttpException(
         `Failed to get build status: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  // NEW ENDPOINT: Get last publish information
+  @Get(':id/last-publish')
+  async getLastPublishInfo(@Param('id') mobileAppId: string) {
+    try {
+      const lastPublish = await this.mobileAppService.getLastPublishInfo(mobileAppId);
+      return {
+        lastPublish,
+      };
+    } catch (error) {
+      this.logger.error(`Failed to get last publish info: ${error.message}`);
+      throw new HttpException(
+        `Failed to get last publish info: ${error.message}`,
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }

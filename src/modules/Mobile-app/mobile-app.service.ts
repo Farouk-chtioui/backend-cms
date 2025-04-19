@@ -12,12 +12,8 @@ import { AppDesignService } from '../appDesign/appDesign.service';
 import { ScreenService } from '../screen/screen.service';
 import { OnboardingScreensService } from '../onboarding-screens/service/onboarding-screens.service';
 import { Repository } from '../Repositories/repository.schema'; // Add this import
-<<<<<<< HEAD
-import { Widget } from '../widget/interfaces/widget.interface'; // Add Widget interface import
-=======
 import { Widget } from '../widget/interfaces/widget.interface'; // Possibly remove if no longer needed
 import { WidgetScreenService } from '../widgetscreen/widgetscreen.service'; // <-- you'll likely need to inject this
->>>>>>> 8f8dad58a824b47aa65497cdf5367b309a42588f
 
 @Injectable()
 export class MobileAppService {
@@ -27,13 +23,8 @@ export class MobileAppService {
     @InjectModel(MobileApp.name) private mobileAppModel: Model<MobileApp>,
     @InjectModel(AppDesign.name) private appDesignModel: Model<AppDesign>,
     @InjectModel('AppLayout') private appLayoutModel: Model<AppLayout>,
-<<<<<<< HEAD
-    @InjectModel(Repository.name) private repositoryModel: Model<Repository>, 
-    @InjectModel('Widget') private widgetModel: Model<Widget>, // Add Widget model
-=======
     @InjectModel(Repository.name) private repositoryModel: Model<Repository>,
     @InjectModel('Widget') private widgetModel: Model<Widget>, // Possibly remove if you no longer need it
->>>>>>> 8f8dad58a824b47aa65497cdf5367b309a42588f
     private readonly appGenerationService: AppGenerationService,
     private readonly appLayoutService: AppLayoutService,
     private readonly appDesignService: AppDesignService,
@@ -400,28 +391,6 @@ export class MobileAppService {
       }
       this.logger.debug(`Fetching full app data for mobileAppId: ${mobileAppId}`);
 
-<<<<<<< HEAD
-      // Find repository information for this mobile app
-      let repository = await this.repositoryModel.findOne({ mobileAppId }).exec();
-      
-      // Log repository information for debugging
-      if (repository) {
-        this.logger.debug(`Found repository for mobile app: ${repository.repositoryName}`);
-      } else {
-        this.logger.warn(`No repository found for mobile app ${mobileAppId}. Trying to find by repositoryId...`);
-        // Try to find by repositoryId as a fallback
-        if (mobileApp.repositoryId) {
-          const repoByRepoId = await this.repositoryModel.findById(mobileApp.repositoryId).exec();
-          if (repoByRepoId) {
-            this.logger.debug(`Found repository by repositoryId: ${repoByRepoId.repositoryName}`);
-            repository = repoByRepoId;
-          }
-        }
-      }
-      
-      // Find all app data elements, using OTA-optimized methods
-      const [appDesign, appLayout, onboardingScreens] = await Promise.all([
-=======
       // Find repository for this mobile app (as before)
       let repository = await this.repositoryModel.findOne({ mobileAppId }).exec();
       if (!repository && mobileApp.repositoryId) {
@@ -431,34 +400,17 @@ export class MobileAppService {
 
       // Gather design, layout, onboarding, normal screens
       const [appDesign, appLayout, onboardingScreens, screens] = await Promise.all([
->>>>>>> 8f8dad58a824b47aa65497cdf5367b309a42588f
         this.appDesignModel.findById(mobileApp.appDesignId).exec(),
         this.appLayoutModel.findById(mobileApp.appLayoutId).exec(),
         this.onboardingScreensService.findAllByAppId(mobileAppId),
         this.screenService.findByAppIdForOTA(mobileAppId), // or .findByAppId() if you prefer
       ]);
 
-<<<<<<< HEAD
-      // Get screens with the OTA-specific method that prevents widget population
-      const screens = await this.screenService.findByAppIdForOTA(mobileAppId);
-      
-      this.logger.debug(`Found ${screens.length} screens and ${onboardingScreens.length} onboarding screens`);
-      
-      // Get all widgets for this mobile app as a separate array
-      const allAppWidgets = await this.widgetModel.find(
-        { mobileAppId }
-      ).lean().exec();
-      
-      this.logger.debug(`Found ${allAppWidgets.length} widgets for the mobile app`);
-
-      // Prepare mobile app data (excluding references we'll replace with actual data)
-=======
       // NEW: retrieve the widgetScreens (each with .widgets populated inside the service)
       const widgetScreens = await this.widgetScreenService.findAllByAppIdWithWidgets(mobileAppId);
       this.logger.debug(`Found ${widgetScreens.length} widgetScreens for the mobile app`);
 
       // Build the basic mobileApp object
->>>>>>> 8f8dad58a824b47aa65497cdf5367b309a42588f
       const mobileAppData = {
         ...mobileApp.toObject(),
         appDesignId: undefined,
@@ -470,18 +422,6 @@ export class MobileAppService {
         mobileApp: mobileAppData,
         appDesign,
         appLayout,
-<<<<<<< HEAD
-        screens, // Screens with just widget IDs, not populated widgets
-        onboardingScreens,
-        widgets: allAppWidgets, // Include all widgets as a separate array
-        repository: repository ? {
-          repositoryName: repository.repositoryName,
-          name: repository.repositoryName, // Include both for backward compatibility
-          image: repository.image,
-          description: repository.description,
-          coverImage: repository.coverImage
-        } : null
-=======
         screens,           // normal screens (no widget population)
         onboardingScreens,
         widgetScreens,     // the new array: each includes child widgets
@@ -494,7 +434,6 @@ export class MobileAppService {
               coverImage: repository.coverImage,
             }
           : null,
->>>>>>> 8f8dad58a824b47aa65497cdf5367b309a42588f
       };
     } catch (error) {
       this.logger.error(`Error fetching full mobile app data: ${error.message}`);
@@ -551,54 +490,62 @@ export class MobileAppService {
   // generateMobileApp: Orchestrates generation by calling AppGenerationService.
   // No changes needed here unless you rename "widgets" -> "widgetScreens" in your fullAppData
   // -----------------------------------------------------------------
-  async generateMobileApp(
-    fullAppData: any,
-    updateOnlyOta: boolean = false,
-    forceRebuild: boolean = false,
-    forceOtaUpdate: boolean = false
-  ): Promise<any> {
-    try {
-      const mobileAppId = fullAppData.mobileApp?._id;
+  // Updated generateMobileApp method for mobile-app.service.ts
+async generateMobileApp(
+  fullAppData: any,
+  updateOnlyOta: boolean = false,
+  forceRebuild: boolean = false,
+  forceOtaUpdate: boolean = false,
+  username: string = 'Unknown User' // Add username parameter with default
+): Promise<any> {
+  try {
+    const mobileAppId = fullAppData.mobileApp?._id;
 
-      // Clear previous build status if doing a full rebuild or force rebuild is requested
-      if (!updateOnlyOta || forceRebuild) {
-        if (mobileAppId) {
-          await this.mobileAppModel.findByIdAndUpdate(mobileAppId, {
-            apkUrl: null,
-            qrCodeDataUrl: null
-          });
-        }
+    // Clear previous build status if doing a full rebuild or force rebuild is requested
+    if (!updateOnlyOta || forceRebuild) {
+      if (mobileAppId) {
+        await this.mobileAppModel.findByIdAndUpdate(mobileAppId, {
+          apkUrl: null,
+          qrCodeDataUrl: null
+        });
       }
-
-      // Log if forcing OTA update
-      if (forceOtaUpdate) {
-        this.logger.log(`Force OTA update requested for app ${mobileAppId}`);
-      }
-
-      // PASS the entire fullAppData into the updated appGenerationService
-      // which now handles "widgetScreens" (not "widgets").
-      const result = await this.appGenerationService.generateOrUpdateFlutterApp(
-        fullAppData,
-        updateOnlyOta,
-        forceRebuild || forceOtaUpdate // Force rebuild or force OTA update
-      );
-
-      // If we got back APK URL info, store it
-      if (result.apkUrl && result.qrCodeDataUrl) {
-        if (mobileAppId) {
-          await this.mobileAppModel.findByIdAndUpdate(mobileAppId, {
-            apkUrl: result.apkUrl,
-            qrCodeDataUrl: result.qrCodeDataUrl,
-          });
-        }
-      }
-
-      return result;
-    } catch (error) {
-      this.logger.error(`Failed to generate mobile app: ${error.message}`);
-      throw error;
     }
+
+    // Log if forcing OTA update
+    if (forceOtaUpdate) {
+      this.logger.log(`Force OTA update requested for app ${mobileAppId}`);
+    }
+
+    // Update last publish info before generation
+    if (mobileAppId) {
+      this.logger.log(`Updating last publish info: ${mobileAppId} by ${username}`);
+      await this.updateLastPublishInfo(mobileAppId, username);
+    }
+
+    // PASS the entire fullAppData into the updated appGenerationService
+    // which now handles "widgetScreens" (not "widgets").
+    const result = await this.appGenerationService.generateOrUpdateFlutterApp(
+      fullAppData,
+      updateOnlyOta,
+      forceRebuild || forceOtaUpdate // Force rebuild or force OTA update
+    );
+
+    // If we got back APK URL info, store it
+    if (result.apkUrl && result.qrCodeDataUrl) {
+      if (mobileAppId) {
+        await this.mobileAppModel.findByIdAndUpdate(mobileAppId, {
+          apkUrl: result.apkUrl,
+          qrCodeDataUrl: result.qrCodeDataUrl,
+        });
+      }
+    }
+
+    return result;
+  } catch (error) {
+    this.logger.error(`Failed to generate mobile app: ${error.message}`);
+    throw error;
   }
+}
 
   async updateBuildResult(mobileAppId: string, apkUrl: string): Promise<any> {
     try {
@@ -625,4 +572,55 @@ export class MobileAppService {
       status: mobileApp.apkUrl && mobileApp.qrCodeDataUrl ? 'completed' : 'pending',
     };
   }
+
+  // These methods should be added to the MobileAppService class in mobile-app.service.ts
+
+async updateLastPublishInfo(mobileAppId: string, username: string): Promise<MobileApp> {
+  this.logger.debug(`Updating last publish info for app ${mobileAppId} by ${username}`);
+  
+  try {
+    if (!Types.ObjectId.isValid(mobileAppId)) {
+      throw new BadRequestException('Invalid mobile app ID');
+    }
+    
+    const mobileApp = await this.mobileAppModel.findById(mobileAppId).exec();
+    if (!mobileApp) {
+      throw new NotFoundException(`Mobile app with id ${mobileAppId} not found`);
+    }
+
+    const lastPublish = {
+      username,
+      timestamp: new Date()
+    };
+
+    return await this.mobileAppModel.findByIdAndUpdate(
+      mobileAppId,
+      { lastPublish },
+      { new: true }
+    ).exec();
+  } catch (error) {
+    this.logger.error(`Error updating last publish info: ${error.message}`);
+    throw error;
+  }
+}
+
+async getLastPublishInfo(mobileAppId: string): Promise<{ username: string; timestamp: Date } | null> {
+  this.logger.debug(`Getting last publish info for app ${mobileAppId}`);
+  
+  try {
+    if (!Types.ObjectId.isValid(mobileAppId)) {
+      throw new BadRequestException('Invalid mobile app ID');
+    }
+    
+    const mobileApp = await this.mobileAppModel.findById(mobileAppId).exec();
+    if (!mobileApp) {
+      throw new NotFoundException(`Mobile app with id ${mobileAppId} not found`);
+    }
+
+    return mobileApp.lastPublish;
+  } catch (error) {
+    this.logger.error(`Error getting last publish info: ${error.message}`);
+    throw error;
+  }
+}
 }

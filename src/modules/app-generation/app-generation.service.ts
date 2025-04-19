@@ -554,12 +554,6 @@ export class AppGenerationService {
   private generateOtaEndpoints(otaUploads: Record<string, string>): Record<string, string> {
     const endpoints: Record<string, string> = {};
     
-<<<<<<< HEAD
-    // Make sure all required packs have endpoints, including widgets
-    const requiredPacks = ['design', 'layout', 'screens', 'onboarding', 'config', 'widgets'];
-    
-    // First process all uploads we have
-=======
     // We need the following packs at minimum
     const requiredPacks = [
       'design',
@@ -571,18 +565,13 @@ export class AppGenerationService {
     ];
     
     // For each file we uploaded, create an endpoint
->>>>>>> 8f8dad58a824b47aa65497cdf5367b309a42588f
     for (const fileName in otaUploads) {
       const fileId = otaUploads[fileName];
       const packKey = fileName.replace('_pack.json', '');
       endpoints[packKey] = `${process.env.APPWRITE_ENDPOINT}/storage/buckets/${process.env.APPWRITE_OTA_BUCKET_ID}/files/${fileId}/view?project=${process.env.APPWRITE_PROJECT_ID}`;
     }
     
-<<<<<<< HEAD
-    // Check for any missing required packs
-=======
     // Make sure the required packs all exist in `endpoints`
->>>>>>> 8f8dad58a824b47aa65497cdf5367b309a42588f
     for (const requiredPack of requiredPacks) {
       const fileName = `${requiredPack}_pack.json`;
       if (!endpoints[requiredPack] && otaUploads[fileName]) {
@@ -747,14 +736,8 @@ export class AppGenerationService {
   // If you have normal screens too, you can still keep them in `screens` as is.
   // -----------------------------------------------------------------
   private splitIntoOTAPacks(fullAppData: any): Record<string, any> {
-<<<<<<< HEAD
-    // Clean up screens data to remove widget information
-    const cleanScreens = (fullAppData.screens || []).map(screen => {
-      // Create a clean screen with essential properties only
-=======
     // 1) Build “screens” (unchanged)
     const cleanScreens = (fullAppData.screens || []).map((screen: any) => {
->>>>>>> 8f8dad58a824b47aa65497cdf5367b309a42588f
       const cleanScreen = {
         _id: screen._id,
         name: screen.name,
@@ -766,37 +749,6 @@ export class AppGenerationService {
         description: screen.description,
         tags: screen.tags,
         metadata: screen.metadata,
-<<<<<<< HEAD
-        widgetScreenId: screen.widgetScreenId
-      };
-      
-      // Ensure widgetScreenId is just an ID, not a populated object
-      if (screen.widgetScreenId && typeof screen.widgetScreenId === 'object') {
-        cleanScreen.widgetScreenId = screen.widgetScreenId._id || screen.widgetScreenId;
-      }
-      
-      return cleanScreen;
-    });
-
-    // Process widgets to make them more suitable for OTA updates
-    const processedWidgets = (fullAppData.widgets || []).map(widget => {
-      // Create a clean widget without excessive references
-      return {
-        _id: widget._id,
-        name: widget.name,
-        type: widget.type,
-        category: widget.category,
-        content: widget.content,
-        style: widget.style,
-        mobileOptions: widget.mobileOptions,
-        interactions: widget.interactions,
-        performance: widget.performance,
-        accessibility: widget.accessibility,
-        mobileAppId: widget.mobileAppId
-      };
-    });
-
-=======
         widgetScreenId: screen.widgetScreenId,
       };
       // if widgetScreenId is an object, store only ._id
@@ -845,23 +797,16 @@ export class AppGenerationService {
     });
   
     // 3) Build final packs, referencing each key as needed
->>>>>>> 8f8dad58a824b47aa65497cdf5367b309a42588f
     const packs: Record<string, any> = {
       design: fullAppData.appDesign || {},
       layout: fullAppData.appLayout || {},
       screens: cleanScreens,
       onboarding: fullAppData.onboardingScreens || [],
-<<<<<<< HEAD
-      widgets: processedWidgets // Use the processed widgets array
-    };
-
-=======
       // use the processed array with header
       widgetScreens: processedWidgetScreens,
     };
   
     // 4) Basic config pack
->>>>>>> 8f8dad58a824b47aa65497cdf5367b309a42588f
     const mobileApp = fullAppData.mobileApp || {};
     const repository = fullAppData.repository || {};
     packs.config = {
