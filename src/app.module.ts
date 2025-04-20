@@ -17,6 +17,7 @@ import { HeaderModule } from './modules/header/header.module';
 import { ImageKitService } from './shared/imagekit.service';
 import { EditorialPagesModule } from './modules/editorial-pages/editorial-pages.module';
 import { MapsModule } from './modules/maps/maps.module';
+import { FcmModule } from './modules/FCM/fcm.module';
 
 @Module({
   imports: [
@@ -34,7 +35,8 @@ import { MapsModule } from './modules/maps/maps.module';
     WidgetScreenModule,
     HeaderModule,
     EditorialPagesModule,
-    MapsModule
+    MapsModule,
+    FcmModule,
   ],
   providers: [LiveUpdatesGateway, ImageKitService],
 })
