@@ -17,6 +17,8 @@ import { HeaderModule } from './modules/header/header.module';
 import { ImageKitService } from './shared/imagekit.service';
 import { EditorialPagesModule } from './modules/editorial-pages/editorial-pages.module';
 import { MapsModule } from './modules/maps/maps.module';
+import { TeamsModule } from './modules/teams/teams.module';
+import { Teams } from 'node-appwrite';
 import { FcmModule } from './modules/FCM/fcm.module';
 
 @Module({
@@ -36,6 +38,7 @@ import { FcmModule } from './modules/FCM/fcm.module';
     HeaderModule,
     EditorialPagesModule,
     MapsModule,
+    TeamsModule,
     FcmModule,
   ],
   providers: [LiveUpdatesGateway, ImageKitService],
