@@ -42,6 +42,8 @@ export class TeamNotificationsService {
         type: data.type,
         sourceId: sourceIdObj,
         read: false,
+        createdAt: new Date(),
+        updatedAt: new Date()
       });
 
       const savedNotification = await newNotification.save();

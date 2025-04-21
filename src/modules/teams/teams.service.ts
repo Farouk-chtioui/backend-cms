@@ -87,6 +87,9 @@ export class TeamsService {
           // Update socket gateway team membership
           await this.teamNotificationsGateway.refreshUserTeamMemberships(memberIdStr);
         }
+
+        // Send notifications to members that they've been added to the team
+        await this.sendTeamAdditionNotifications(savedTeam, members, ownerId);
       }
       
       // Also refresh for the owner
@@ -316,6 +319,10 @@ export class TeamsService {
       const updatedTeam = await team.save();
       
       if (addedMembers.size > 0) {
+        // Send notifications to newly added members
+        const newMembersArray = Array.from(addedMembers);
+        await this.sendTeamAdditionNotifications(updatedTeam, newMembersArray, userId);
+        
         for (const memberId of addedMembers) {
           await this.teamNotificationsGateway.refreshUserTeamMemberships(memberId);
         }
@@ -923,6 +930,59 @@ export class TeamsService {
         throw error;
       }
       throw new ForbiddenException('Failed to verify team edit permissions');
+    }
+  }
+
+  // Helper method to send notifications to users when they are added to a team
+  private async sendTeamAdditionNotifications(
+    team: Team,
+    members: Array<string | Types.ObjectId>,
+    addedByUserId: string
+  ): Promise<void> {
+    try {
+      const addedBy = await this.usersService.findById(addedByUserId);
+      const addedByName = addedBy ? addedBy.username || addedBy.email || 'A team admin' : 'A team admin';
+      
+      for (const memberId of members) {
+        let memberIdStr: string;
+        
+        if (typeof memberId === 'string') {
+          // For strings, check if it's an email or an ID
+          if (memberId.includes('@')) {
+            try {
+              const user = await this.usersService.findOneByEmail(memberId);
+              if (!user) continue;
+              memberIdStr = user._id.toString();
+            } catch (e) {
+              continue; // Skip if user not found by email
+            }
+          } else {
+            memberIdStr = memberId;
+          }
+        } else if (memberId && typeof memberId === 'object' && 'toString' in memberId) {
+          memberIdStr = (memberId as Types.ObjectId).toString();
+        } else {
+          console.error('Invalid member ID format:', memberId);
+          continue; // Skip this invalid member
+        }
+        
+        // Don't notify the user who is adding members
+        if (memberIdStr === addedByUserId) continue;
+        
+        // Send notification
+        await this.teamNotificationsService.createNotification({
+          userId: memberIdStr,
+          teamId: team._id.toString(),
+          message: `You have been added to team "${team.name}" by ${addedByName}`,
+          type: 'message',
+          sourceId: team._id.toString(),
+          teamName: team.name,
+          isAdmin: false,
+          senderId: addedByUserId
+        });
+      }
+    } catch (error) {
+      console.error('Error sending team addition notifications:', error);
     }
   }
 }
