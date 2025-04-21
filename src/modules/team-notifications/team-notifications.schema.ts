@@ -1,33 +1,69 @@
 // team-notifications.schema.ts
-import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import { Schema, SchemaFactory, Prop } from '@nestjs/mongoose';
 import { Document, Schema as MongooseSchema, Types } from 'mongoose';
 
 @Schema({ timestamps: true })
 export class TeamNotification extends Document {
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
-  userId: Types.ObjectId;
+  @Prop({ 
+    required: true, 
+    index: true,
+    type: MongooseSchema.Types.Mixed,
+    validate: {
+      validator: function(v) {
+        return Types.ObjectId.isValid(v) || typeof v === 'string';
+      },
+      message: 'userId must be a valid ObjectId or string'
+    }
+  })
+  userId: Types.ObjectId | string;
 
-  @Prop({ type: Types.ObjectId, ref: 'Team', required: true })
-  teamId: Types.ObjectId;
+  @Prop({ 
+    required: true, 
+    index: true,
+    type: MongooseSchema.Types.Mixed,
+    validate: {
+      validator: function(v) {
+        return Types.ObjectId.isValid(v) || typeof v === 'string';
+      },
+      message: 'teamId must be a valid ObjectId or string'
+    }
+  })
+  teamId: Types.ObjectId | string;
 
-  @Prop({ type: String, required: true })
+  @Prop({ required: true })
   message: string;
 
-  @Prop({ type: String, required: true, enum: ['message', 'note'] })
+  @Prop({ 
+    required: true, 
+    enum: ['message', 'note'],
+    default: 'message'
+  })
   type: string;
 
-  @Prop({ type: Types.ObjectId, required: false })
-  sourceId: Types.ObjectId;
+  @Prop({ 
+    type: MongooseSchema.Types.Mixed,
+    validate: {
+      validator: function(v) {
+        return v === undefined || v === null || Types.ObjectId.isValid(v) || typeof v === 'string';
+      },
+      message: 'sourceId must be a valid ObjectId, string, or undefined'
+    }
+  })
+  sourceId?: Types.ObjectId | string;
 
-  @Prop({ type: Boolean, default: false })
+  @Prop({ default: false })
   read: boolean;
-
-  // Explicitly add createdAt and updatedAt
-  @Prop({ type: Date, default: Date.now })
+  
+  @Prop({ default: Date.now })
   createdAt: Date;
 
-  @Prop({ type: Date, default: Date.now })
+  @Prop({ default: Date.now })
   updatedAt: Date;
 }
 
 export const TeamNotificationSchema = SchemaFactory.createForClass(TeamNotification);
+
+// Add compound index for userId and read status only (avoid duplicate single field indexes)
+TeamNotificationSchema.index({ userId: 1, read: 1 });
+// Add index for createdAt for sorting notifications
+TeamNotificationSchema.index({ createdAt: -1 });

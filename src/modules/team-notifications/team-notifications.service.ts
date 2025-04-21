@@ -22,6 +22,8 @@ export class TeamNotificationsService {
     type: 'message' | 'note';
     sourceId?: string;
     teamName?: string;
+    isAdmin?: boolean;
+    senderId?: string; // Add this to keep track of who sent the notification
   }): Promise<TeamNotification> {
     // Ensure we have ObjectId for these fields
     let userIdObj;
@@ -60,17 +62,21 @@ export class TeamNotificationsService {
       // Format notification for frontend
       const formattedNotification = this.formatNotification(savedNotification, teamName);
       
-      // Send notification to the target user
-      this.teamNotificationsGateway.sendNotificationToUser(
-        data.userId,
-        formattedNotification
-      );
-
-      // Broadcast to team members
+      // If the user is admin but also the sender, don't send the notification to them
+      const isAdminSender = data.isAdmin && data.senderId && data.userId === data.senderId;
+      if (data.isAdmin && !isAdminSender) {
+        console.log(`Sending direct notification to admin user: ${data.userId}`);
+        this.teamNotificationsGateway.sendNotificationToUser(
+          data.userId,
+          formattedNotification
+        );
+      }
+      
+      // Broadcast to team members (excluding the sender)
       this.teamNotificationsGateway.sendNotificationToTeam(
         data.teamId,
         formattedNotification,
-        data.userId // Exclude the sender
+        data.senderId || data.userId // Exclude the sender (could be admin or regular user)
       );
       
       // Force refresh team memberships to ensure user has access

@@ -639,6 +639,13 @@ export class TeamsService {
   ): Promise<void> {
     try {
       const memberIds = new Set<string>();
+      let isAdmin = false;
+      
+      // Check if sender is admin
+      try {
+        const user = await this.usersService.findById(senderId);
+        isAdmin = user && user.role === 'admin';
+      } catch (error) {}
       
       if (team.ownerId && team.ownerId.toString() !== senderId) {
         memberIds.add(team.ownerId.toString());
@@ -690,7 +697,9 @@ export class TeamsService {
             message,
             type,
             sourceId,
-            teamName: team.name
+            teamName: team.name,
+            isAdmin: isAdmin, 
+            senderId: senderId // Pass the sender ID to prevent self-notifications
           });
           notifications.push(notification);
         } catch (error) {}
