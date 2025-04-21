@@ -1,11 +1,15 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { ValidationPipe } from '@nestjs/common'; // Import ValidationPipe
+import { ValidationPipe } from '@nestjs/common';
 import * as express from 'express';
 import { seedAdminUser } from './seed/admin.seed';
+import { IoAdapter } from '@nestjs/platform-socket.io';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
+  // Use Socket.IO adapter
+  app.useWebSocketAdapter(new IoAdapter(app));
 
   // Increase request body size limits
   app.use(express.json({ limit: '50mb' }));
@@ -16,6 +20,7 @@ async function bootstrap() {
     origin: 'http://localhost:3000', // Your frontend URL
     methods: 'GET,POST,PUT,DELETE,PATCH',
     credentials: true,
+    allowedHeaders: 'Content-Type, Authorization',
   });
 
   // Enable global validation pipe for validating incoming requests

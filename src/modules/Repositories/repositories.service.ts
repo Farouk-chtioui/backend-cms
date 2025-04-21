@@ -82,40 +82,54 @@ export class RepositoriesService {
 
   async findByUserAccess(userId: string): Promise<Repository[]> {
     try {
-      // First try to get the user's email
+      // First try to get the user's email and details
       const user = await this.usersService.findById(userId);
       
-      // If we successfully got the user's email, search by both ID and email
-      if (user?.email) {
-        return this.repositoryModel
-          .find({
-            $or: [
-              { ownerId: userId },
-              { team: user.email }
-            ]
-          })
+      // Admin has access to all repositories
+      if (user?.role === 'admin') {
+        return this.repositoryModel.find()
           .populate('mobileAppId')
           .populate('ownerId')
           .populate('team')
           .exec();
       }
+      
+      // Create query conditions with proper typing
+      const conditions: any[] = [
+        { ownerId: userId }
+      ];
+      
+      // Add email condition if user email is available
+      if (user?.email) {
+        conditions.push({ team: user.email });
+      }
+      
+      // Add userId condition for team membership
+      conditions.push({ team: userId });
+      
+      // Execute the query with combined conditions
+      return this.repositoryModel
+        .find({ $or: conditions })
+        .populate('mobileAppId')
+        .populate('ownerId')
+        .populate('team')
+        .exec();
     } catch (error) {
-      console.error('Error fetching user:', error);
-      // If there's any error, fall through to the default behavior
+      console.error('Error in findByUserAccess:', error);
+      
+      // Fallback to basic query if there's an error
+      return this.repositoryModel
+        .find({
+          $or: [
+            { ownerId: userId } as any,
+            { team: userId } as any
+          ]
+        })
+        .populate('mobileAppId')
+        .populate('ownerId')
+        .populate('team')
+        .exec();
     }
-
-    // Default behavior: search by userId in both fields
-    return this.repositoryModel
-      .find({
-        $or: [
-          { ownerId: userId },
-          { team: userId }
-        ]
-      })
-      .populate('mobileAppId')
-      .populate('ownerId')
-      .populate('team')
-      .exec();
   }
 
   async update(id: string, updateRepositoryDto: Partial<CreateRepositoryDto>): Promise<Repository> {

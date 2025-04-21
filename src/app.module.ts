@@ -19,6 +19,7 @@ import { EditorialPagesModule } from './modules/editorial-pages/editorial-pages.
 import { MapsModule } from './modules/maps/maps.module';
 import { TeamsModule } from './modules/teams/teams.module';
 import { Teams } from 'node-appwrite';
+import { TeamNotificationsModule } from './modules/team-notifications/team-notifications.module';
 
 @Module({
   imports: [
@@ -37,7 +38,8 @@ import { Teams } from 'node-appwrite';
     HeaderModule,
     EditorialPagesModule,
     MapsModule,
-    TeamsModule
+    TeamsModule,
+    TeamNotificationsModule
   ],
   providers: [LiveUpdatesGateway, ImageKitService],
 })

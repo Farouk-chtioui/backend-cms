@@ -1,4 +1,5 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+// teams.service.ts
+import { Injectable, NotFoundException, ForbiddenException, Inject, forwardRef } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Team } from './teams.schema';
@@ -12,6 +13,8 @@ import {
   CreateTeamNoteDto,
   UpdateTeamNoteDto
 } from './dto/team-dto';
+import { TeamNotificationsService } from '../team-notifications/team-notifications.service';
+import { TeamNotificationsGateway } from '../team-notifications/team-notifications.gateway';
 
 @Injectable()
 export class TeamsService {
@@ -19,6 +22,10 @@ export class TeamsService {
     @InjectModel(Team.name) private teamModel: Model<Team>,
     private readonly usersService: UsersService,
     private readonly repositoriesService: RepositoriesService,
+    @Inject(forwardRef(() => TeamNotificationsService))
+    private readonly teamNotificationsService: TeamNotificationsService,
+    @Inject(forwardRef(() => TeamNotificationsGateway))
+    private readonly teamNotificationsGateway: TeamNotificationsGateway,
   ) {}
 
   // TEAM CORE FUNCTIONALITY
@@ -62,13 +69,104 @@ export class TeamsService {
         notes: []
       });
       
-      return await newTeam.save();
+      const savedTeam = await newTeam.save();
+      
+      // Update team membership in socket gateway for all members
+      if (members && members.length > 0) {
+        for (const memberId of members) {
+          let memberIdStr: string;
+          if (typeof memberId === 'string') {
+            memberIdStr = memberId;
+          } else if (memberId && typeof memberId === 'object' && 'toString' in memberId) {
+            memberIdStr = (memberId as Types.ObjectId).toString();
+          } else {
+            console.error('Invalid member ID format:', memberId);
+            continue; // Skip this invalid member
+          }
+          
+          // Update socket gateway team membership
+          await this.teamNotificationsGateway.refreshUserTeamMemberships(memberIdStr);
+        }
+      }
+      
+      // Also refresh for the owner
+      await this.teamNotificationsGateway.refreshUserTeamMemberships(ownerId);
+      
+      return savedTeam;
     } catch (error) {
       console.error('Error creating team:', error);
       if (error instanceof NotFoundException || error instanceof ForbiddenException) {
         throw error;
       }
       throw new Error(`Failed to create team: ${error.message}`);
+    }
+  }
+  
+  async getTeamsForUser(userId: string): Promise<Team[]> {
+    try {
+      console.log(`Fetching all teams for user: ${userId}`);
+      
+      // Convert userId to ObjectId if it's a valid format
+      let userIdCondition: { $in: any[] };
+      
+      if (Types.ObjectId.isValid(userId)) {
+        const userIdObj = new Types.ObjectId(userId);
+        userIdCondition = { $in: [userId, userIdObj] };
+      } else {
+        userIdCondition = { $in: [userId] };
+      }
+      
+      // Get teams where user is either the owner or a member
+      const teams = await this.teamModel.find({
+        $or: [
+          { ownerId: userIdCondition.$in },
+          { members: userIdCondition.$in }
+        ]
+      }).exec();
+      
+      console.log(`Found ${teams.length} teams where user ${userId} is an owner or member`);
+      
+      // Also get repositories where user is a member
+      try {
+        // Get the user to check for email
+        const user = await this.usersService.findById(userId);
+        if (!user) {
+          console.log(`User ${userId} not found`);
+          return teams;
+        }
+
+        // Find all repositories the user has access to
+        const repos = await this.repositoriesService.findByUserAccess(userId);
+        if (repos && repos.length > 0) {
+          console.log(`Found ${repos.length} repositories for user ${userId}`);
+          
+          // Get teams from these repositories
+          const repoIds = repos.map(repo => repo._id);
+          const repoTeams = await this.teamModel.find({
+            repositoryId: { $in: repoIds }
+          }).exec();
+          
+          console.log(`Found ${repoTeams.length} teams from user's repositories`);
+          
+          // Combine teams, avoiding duplicates by checking IDs
+          const allTeamIds = new Set(teams.map(team => team._id.toString()));
+          repoTeams.forEach(team => {
+            if (!allTeamIds.has(team._id.toString())) {
+              teams.push(team);
+              allTeamIds.add(team._id.toString());
+            }
+          });
+          
+          console.log(`Total teams after merging repo teams: ${teams.length}`);
+        }
+      } catch (error) {
+        console.error(`Error fetching repositories for user ${userId}:`, error);
+      }
+      
+      return teams;
+    } catch (error) {
+      console.error(`Error getting teams for user ${userId}:`, error);
+      return [];
     }
   }
 
@@ -81,7 +179,6 @@ export class TeamsService {
   }
 
   async getTeamsByRepository(repositoryId: string, userId: string): Promise<Team[]> {
-    // Check if user has access to this repository
     const hasAccess = await this.checkRepositoryAccess(repositoryId, userId);
     if (!hasAccess) {
       throw new ForbiddenException('You do not have access to this repository');
@@ -92,31 +189,20 @@ export class TeamsService {
       .exec();
   }
 
-  // Replace the updateTeam method in teams.service.ts with this fixed version
-// This handles both ObjectIds and email strings properly
-
-// Enhanced getTeamMessages, getTeamNotes, and updateTeam methods for teams.service.ts
-
-async getTeamMessages(teamId: string, userId: string): Promise<any[]> {
+  async getTeamMessages(teamId: string, userId: string): Promise<any[]> {
     try {
       const team = await this.findTeamById(teamId);
-      
-      // Check if user has access to the team
       await this.checkTeamMembership(team, userId);
       
-      console.log(`Fetching messages for team ${teamId}, messages count: ${team.messages.length}`);
-      
-      // Convert Mongoose/MongoDB document to plain object for each message
       const enrichedMessages = await Promise.all(
         team.messages.map(async (message, index) => {
-          // Explicitly create plain JS object with all required fields
           const messageObj = {
             userId: message.userId ? message.userId.toString() : '',
             content: message.content || '',
             isSystemMessage: message.isSystemMessage || false,
             createdAt: message.createdAt ? message.createdAt.toISOString() : new Date().toISOString(),
             updatedAt: message.updatedAt ? message.updatedAt.toISOString() : new Date().toISOString(),
-            index // Add index for reference
+            index
           };
           
           if (messageObj.isSystemMessage) {
@@ -135,7 +221,6 @@ async getTeamMessages(teamId: string, userId: string): Promise<any[]> {
               userImage: user?.profileImage || null,
             };
           } catch (error) {
-            console.error('Error fetching user for message:', error);
             return {
               ...messageObj,
               userName: 'Unknown User',
@@ -145,27 +230,19 @@ async getTeamMessages(teamId: string, userId: string): Promise<any[]> {
         })
       );
       
-      console.log(`Returning ${enrichedMessages.length} messages for team ${teamId}`);
       return enrichedMessages;
     } catch (error) {
-      console.error(`Error in getTeamMessages for team ${teamId}:`, error);
       throw error;
     }
   }
-  
+
   async getTeamNotes(teamId: string, userId: string): Promise<any[]> {
     try {
       const team = await this.findTeamById(teamId);
-      
-      // Check if user has access to the team
       await this.checkTeamMembership(team, userId);
       
-      console.log(`Fetching notes for team ${teamId}, notes count: ${team.notes.length}`);
-      
-      // Convert Mongoose/MongoDB document to plain object for each note
       const enrichedNotes = await Promise.all(
         team.notes.map(async (note, index) => {
-          // Explicitly create plain JS object with all required fields
           const noteObj = {
             userId: note.userId ? note.userId.toString() : '',
             title: note.title || '',
@@ -173,7 +250,7 @@ async getTeamMessages(teamId: string, userId: string): Promise<any[]> {
             color: note.color || 'bg-yellow-100 border-yellow-300',
             createdAt: note.createdAt ? note.createdAt.toISOString() : new Date().toISOString(),
             updatedAt: note.updatedAt ? note.updatedAt.toISOString() : new Date().toISOString(),
-            index, // Add index for reference
+            index,
             userName: 'Unknown User',
             userImage: null
           };
@@ -184,59 +261,74 @@ async getTeamMessages(teamId: string, userId: string): Promise<any[]> {
               noteObj.userName = user.username || user.email || 'Unknown User';
               noteObj.userImage = user.profileImage || null;
             }
-          } catch (error) {
-            console.error('Error fetching user for note:', error);
-            // Default values already set above
-          }
+          } catch (error) {}
           
           return noteObj;
         })
       );
       
-      console.log(`Returning ${enrichedNotes.length} notes for team ${teamId}`);
       return enrichedNotes;
     } catch (error) {
-      console.error(`Error in getTeamNotes for team ${teamId}:`, error);
       throw error;
     }
   }
-  
+
   async updateTeam(teamId: string, userId: string, updateTeamDto: UpdateTeamDto): Promise<Team> {
     try {
-      console.log(`Updating team ${teamId} with data:`, updateTeamDto);
-      
       const team = await this.findTeamById(teamId);
-      
-      // Check if user is allowed to update team (owner or repository owner)
       await this.checkTeamEditPermission(team, userId);
       
-      // Update team data (except members which we handle separately)
+      const originalMembers = team.members ? team.members.map(m => m.toString()) : [];
+      
       if (updateTeamDto.name) team.name = updateTeamDto.name;
       if (updateTeamDto.description !== undefined) team.description = updateTeamDto.description;
       
-      // Convert members to ObjectIds or strings as appropriate
-      if (updateTeamDto.members) {
-        console.log('Updating team members:', updateTeamDto.members);
-        
-        // Process each member - could be user ID or email
-        team.members = updateTeamDto.members.map(member => {
-          // Check if it's a valid MongoDB ObjectId format
+      const addedMembers = new Set<string>();
+      const removedMembers = new Set<string>(originalMembers);
+      
+      if (updateTeamDto.members !== undefined) {
+        // Fix: Create properly transformed member array and track changes
+        const newMembers = updateTeamDto.members.map(member => {
+          let memberIdStr = '';
+          
           if (Types.ObjectId.isValid(member) && member.match(/^[0-9a-fA-F]{24}$/)) {
+            memberIdStr = member;
             return new Types.ObjectId(member);
           } else {
-            // It's likely an email, keep it as is
+            memberIdStr = member;
             return member;
           }
         });
+        
+        // Track newly added members
+        updateTeamDto.members.forEach(member => {
+          const memberIdStr = typeof member === 'string' ? member : (member as Types.ObjectId).toString();
+          if (!originalMembers.includes(memberIdStr)) {
+            addedMembers.add(memberIdStr);
+          }
+          removedMembers.delete(memberIdStr);
+        });
+        
+        // Assign the properly transformed members array
+        team.members = newMembers;
       }
       
-      console.log(`Saving team with ${team.members.length} members`);
       const updatedTeam = await team.save();
-      console.log(`Team ${teamId} updated successfully`);
+      
+      if (addedMembers.size > 0) {
+        for (const memberId of addedMembers) {
+          await this.teamNotificationsGateway.refreshUserTeamMemberships(memberId);
+        }
+      }
+      
+      if (removedMembers.size > 0) {
+        for (const memberId of removedMembers) {
+          await this.teamNotificationsGateway.refreshUserTeamMemberships(memberId);
+        }
+      }
       
       return updatedTeam;
     } catch (error) {
-      console.error(`Error updating team ${teamId}:`, error);
       throw error;
     }
   }
@@ -244,7 +336,6 @@ async getTeamMessages(teamId: string, userId: string): Promise<any[]> {
   async deleteTeam(teamId: string, userId: string): Promise<boolean> {
     const team = await this.findTeamById(teamId);
     
-    // Check if user is allowed to delete team (must be repository owner or team owner)
     const isTeamOwner = team.ownerId.toString() === userId;
     if (!isTeamOwner) {
       const repository = await this.repositoriesService.findById(team.repositoryId.toString());
@@ -254,11 +345,22 @@ async getTeamMessages(teamId: string, userId: string): Promise<any[]> {
       }
     }
     
+    const allMembers = await this.getTeamMemberIds(team);
+    
+    try {
+      await this.teamNotificationsService.deleteAllForTeam(teamId);
+    } catch (error) {}
+    
     const result = await this.teamModel.deleteOne({ _id: teamId }).exec();
+    
+    for (const memberId of allMembers) {
+      try {
+        await this.teamNotificationsGateway.refreshUserTeamMemberships(memberId);
+      } catch (error) {}
+    }
+    
     return result.deletedCount > 0;
   }
-
-  // TEAM MESSAGES FUNCTIONALITY
 
   // TEAM MESSAGES FUNCTIONALITY
 
@@ -268,25 +370,20 @@ async getTeamMessages(teamId: string, userId: string): Promise<any[]> {
     try {
       const team = await this.findTeamById(teamId);
       
-      // Check if user has access to the team (if not a system message)
       if (!isSystemMessage) {
         try {
-          // This will check if user is team member, team owner, repo owner or repo team member
           const hasAccess = await this.checkTeamMembership(team, userId);
           if (!hasAccess) {
             throw new ForbiddenException('You do not have access to this team');
           }
         } catch (error) {
-          // Check if user is admin - grant access if so
           const user = await this.usersService.findById(userId);
           if (!(user && user.role === 'admin')) {
-            throw error; // Re-throw if not admin
+            throw error;
           }
-          console.log('Admin user bypassing team access check for messages');
         }
       }
       
-      // Create a new message
       const newMessage = {
         userId: new Types.ObjectId(userId),
         content,
@@ -295,14 +392,11 @@ async getTeamMessages(teamId: string, userId: string): Promise<any[]> {
         updatedAt: new Date()
       };
       
-      // Add message to team's messages array
       team.messages.push(newMessage);
       await team.save();
       
-      // Get added message (the last one in the array)
       const addedMessage = team.messages[team.messages.length - 1];
       
-      // Create a response object that matches what the front-end expects
       const messageResponse = {
         userId: addedMessage.userId.toString(),
         content: addedMessage.content,
@@ -312,7 +406,6 @@ async getTeamMessages(teamId: string, userId: string): Promise<any[]> {
         index: team.messages.length - 1
       };
       
-      // Enrich with user information for frontend
       let enrichedMessage: any = { ...messageResponse };
       
       if (!isSystemMessage) {
@@ -329,23 +422,28 @@ async getTeamMessages(teamId: string, userId: string): Promise<any[]> {
         enrichedMessage.userImage = null;
       }
       
-      console.log('Returning created message:', JSON.stringify(enrichedMessage));
+      if (!isSystemMessage) {
+        await this.notifyTeamMembers(
+          team,
+          userId,
+          `New message from ${enrichedMessage.userName}`,
+          'message',
+          team._id.toString()
+        );
+      }
+      
       return enrichedMessage;
     } catch (error) {
-      console.error('Error creating message:', error);
       throw error;
     }
   }
-
 
   async createSystemMessage(systemMessageDto: SystemMessageDto): Promise<any> {
     const { teamId, content } = systemMessageDto;
     
     const team = await this.findTeamById(teamId);
     
-    // Create a new system message
     const newMessage = {
-      // Use a placeholder ID for system
       userId: new Types.ObjectId('000000000000000000000000'),
       content,
       isSystemMessage: true,
@@ -353,11 +451,9 @@ async getTeamMessages(teamId: string, userId: string): Promise<any[]> {
       updatedAt: new Date()
     };
     
-    // Add message to team's messages array
     team.messages.push(newMessage);
     await team.save();
     
-    // Get added message (the last one in the array)
     const addedMessage = team.messages[team.messages.length - 1];
     
     return {
@@ -371,14 +467,12 @@ async getTeamMessages(teamId: string, userId: string): Promise<any[]> {
   async deleteMessage(teamId: string, messageIndex: number, userId: string): Promise<boolean> {
     const team = await this.findTeamById(teamId);
     
-    // Validate message index
     if (messageIndex < 0 || messageIndex >= team.messages.length) {
       throw new NotFoundException('Message not found');
     }
     
     const message = team.messages[messageIndex];
     
-    // Check if user can delete the message (message creator, team owner, or repository owner)
     const isMessageCreator = message.userId.toString() === userId;
     const isTeamOwner = team.ownerId.toString() === userId;
     
@@ -392,7 +486,6 @@ async getTeamMessages(teamId: string, userId: string): Promise<any[]> {
       throw new ForbiddenException('You do not have permission to delete this message');
     }
     
-    // Remove the message from array
     team.messages.splice(messageIndex, 1);
     await team.save();
     
@@ -401,19 +494,13 @@ async getTeamMessages(teamId: string, userId: string): Promise<any[]> {
 
   // TEAM NOTES FUNCTIONALITY
 
-  // Replace the createNote method in teams.service.ts with this fixed version:
-
-async createNote(createTeamNoteDto: CreateTeamNoteDto): Promise<any> {
+  async createNote(createTeamNoteDto: CreateTeamNoteDto): Promise<any> {
     const { teamId, userId, title, content, color } = createTeamNoteDto;
     
     try {
       const team = await this.findTeamById(teamId);
-      
-      // Check if user has access to the team
-      // This will check if user is team member, team owner, repo owner or repo team member
       await this.checkTeamMembership(team, userId);
       
-      // Create a new note
       const newNote = {
         userId: new Types.ObjectId(userId),
         title,
@@ -423,14 +510,11 @@ async createNote(createTeamNoteDto: CreateTeamNoteDto): Promise<any> {
         updatedAt: new Date()
       };
       
-      // Add note to team's notes array
       team.notes.push(newNote);
       await team.save();
       
-      // Get added note (the last one in the array)
       const addedNote = team.notes[team.notes.length - 1];
       
-      // Create a response object that matches what the front-end expects
       const noteResponse = {
         userId: addedNote.userId.toString(),
         title: addedNote.title,
@@ -441,7 +525,6 @@ async createNote(createTeamNoteDto: CreateTeamNoteDto): Promise<any> {
         index: team.notes.length - 1
       };
       
-      // Enrich with user information for frontend
       const enrichedNote: any = {
         ...noteResponse,
         userName: 'Unknown User',
@@ -452,30 +535,31 @@ async createNote(createTeamNoteDto: CreateTeamNoteDto): Promise<any> {
         const user = await this.usersService.findById(userId);
         enrichedNote.userName = user?.username || user?.email || 'Unknown User';
         enrichedNote.userImage = user?.profileImage || null;
-      } catch (error) {
-        // Default values already set above
-      }
+      } catch (error) {}
       
-      console.log('Returning created note:', JSON.stringify(enrichedNote));
+      await this.notifyTeamMembers(
+        team,
+        userId,
+        `New note "${enrichedNote.title}" from ${enrichedNote.userName}`,
+        'note',
+        team._id.toString()
+      );
+      
       return enrichedNote;
     } catch (error) {
-      console.error('Error creating note:', error);
       throw error;
     }
   }
 
-
   async updateNote(teamId: string, noteIndex: number, userId: string, updateTeamNoteDto: UpdateTeamNoteDto): Promise<any> {
     const team = await this.findTeamById(teamId);
     
-    // Validate note index
     if (noteIndex < 0 || noteIndex >= team.notes.length) {
       throw new NotFoundException('Note not found');
     }
     
     const note = team.notes[noteIndex];
     
-    // Check if user can update the note (note creator, team owner, or repository owner)
     const isNoteCreator = note.userId.toString() === userId;
     const isTeamOwner = team.ownerId.toString() === userId;
     
@@ -489,7 +573,6 @@ async createNote(createTeamNoteDto: CreateTeamNoteDto): Promise<any> {
       throw new ForbiddenException('You do not have permission to update this note');
     }
     
-    // Update note data
     const { title, content, color } = updateTeamNoteDto;
     
     if (title !== undefined) note.title = title;
@@ -500,7 +583,6 @@ async createNote(createTeamNoteDto: CreateTeamNoteDto): Promise<any> {
     
     await team.save();
     
-    // Retrieve updated note and enrich
     const updatedNote = team.notes[noteIndex];
     const enrichedNote: any = {
       ...updatedNote,
@@ -513,9 +595,7 @@ async createNote(createTeamNoteDto: CreateTeamNoteDto): Promise<any> {
       const user = await this.usersService.findById(note.userId.toString());
       enrichedNote.userName = user?.username || user?.email || 'Unknown User';
       enrichedNote.userImage = user?.profileImage || null;
-    } catch (error) {
-      // Default values already set above
-    }
+    } catch (error) {}
     
     return enrichedNote;
   }
@@ -523,14 +603,12 @@ async createNote(createTeamNoteDto: CreateTeamNoteDto): Promise<any> {
   async deleteNote(teamId: string, noteIndex: number, userId: string): Promise<boolean> {
     const team = await this.findTeamById(teamId);
     
-    // Validate note index
     if (noteIndex < 0 || noteIndex >= team.notes.length) {
       throw new NotFoundException('Note not found');
     }
     
     const note = team.notes[noteIndex];
     
-    // Check if user can delete the note (note creator, team owner, or repository owner)
     const isNoteCreator = note.userId.toString() === userId;
     const isTeamOwner = team.ownerId.toString() === userId;
     
@@ -544,193 +622,297 @@ async createNote(createTeamNoteDto: CreateTeamNoteDto): Promise<any> {
       throw new ForbiddenException('You do not have permission to delete this note');
     }
     
-    // Remove the note from array
     team.notes.splice(noteIndex, 1);
     await team.save();
     
     return true;
   }
 
-  // HELPER METHODS
+  // HELPER METHODS FOR NOTIFICATIONS
 
-  // Check if a user has access to a repository
+  private async notifyTeamMembers(
+    team: Team,
+    senderId: string,
+    message: string,
+    type: 'message' | 'note',
+    sourceId: string
+  ): Promise<void> {
+    try {
+      const memberIds = new Set<string>();
+      
+      if (team.ownerId && team.ownerId.toString() !== senderId) {
+        memberIds.add(team.ownerId.toString());
+      }
+      
+      if (team.members && team.members.length > 0) {
+        team.members.forEach(memberId => {
+          if (typeof memberId === 'string') {
+            if (memberId.includes('@')) {
+              try {
+                this.usersService.findOneByEmail(memberId)
+                  .then(user => {
+                    if (user && user._id.toString() !== senderId) {
+                      memberIds.add(user._id.toString());
+                    }
+                  })
+                  .catch(err => console.error(`Error finding user by email: ${memberId}`, err));
+              } catch (error) {}
+            } else if (memberId !== senderId) {
+              memberIds.add(memberId);
+            }
+          } else if (memberId && typeof memberId === 'object') {
+            const memberIdStr = memberId.toString();
+            if (memberIdStr !== senderId) {
+              memberIds.add(memberIdStr);
+            }
+          }
+        });
+      }
+      
+      try {
+        const repository = await this.repositoriesService.findById(team.repositoryId.toString());
+        if (repository && repository.team && repository.team.length > 0) {
+          const repoMembers = await this.getRepositoryMemberIds(repository);
+          repoMembers.forEach(memberId => {
+            if (memberId !== senderId) {
+              memberIds.add(memberId);
+            }
+          });
+        }
+      } catch (error) {}
+      
+      const notifications = [];
+      for (const memberId of memberIds) {
+        try {
+          const notification = await this.teamNotificationsService.createNotification({
+            userId: memberId,
+            teamId: team._id.toString(),
+            message,
+            type,
+            sourceId,
+            teamName: team.name
+          });
+          notifications.push(notification);
+        } catch (error) {}
+      }
+    } catch (error) {}
+  }
+
+  private async getRepositoryMemberIds(repository: any): Promise<string[]> {
+    const memberIds: string[] = [];
+    
+    if (!repository.team || !Array.isArray(repository.team)) {
+      return memberIds;
+    }
+    
+    for (const member of repository.team) {
+      if (typeof member === 'string') {
+        if (Types.ObjectId.isValid(member)) {
+          memberIds.push(member);
+        } else if (member.includes('@')) {
+          try {
+            const user = await this.usersService.findOneByEmail(member);
+            if (user) {
+              memberIds.push(user._id.toString());
+            }
+          } catch (error) {}
+        }
+      } else if (member && typeof member === 'object') {
+        memberIds.push(member.toString());
+      }
+    }
+    
+    return memberIds;
+  }
+
+  async getTeamMemberIds(team: Team): Promise<string[]> {
+    const memberIds: Set<string> = new Set();
+    
+    if (team.ownerId) {
+      memberIds.add(team.ownerId.toString());
+    }
+    
+    if (team.members && team.members.length > 0) {
+      for (const memberId of team.members) {
+        if (typeof memberId === 'string') {
+          if (memberId.includes('@')) {
+            try {
+              const user = await this.usersService.findOneByEmail(memberId);
+              if (user) {
+                memberIds.add(user._id.toString());
+              }
+            } catch (error) {}
+          } else {
+            memberIds.add(memberId);
+          }
+        } else if (memberId && typeof memberId === 'object') {
+          memberIds.add(memberId.toString());
+        }
+      }
+    }
+    
+    try {
+      const repository = await this.repositoriesService.findById(team.repositoryId.toString());
+      if (repository && repository.team && repository.team.length > 0) {
+        const repoMembers = await this.getRepositoryMemberIds(repository);
+        repoMembers.forEach(id => memberIds.add(id));
+      }
+    } catch (error) {}
+    
+    return Array.from(memberIds);
+  }
+
   async checkRepositoryAccess(repositoryId: string, userId: string): Promise<boolean> {
     try {
-      console.log(`Checking repository access: repositoryId=${repositoryId}, userId=${userId}`);
-      
       const repository = await this.repositoriesService.findById(repositoryId);
       if (!repository) {
-        console.log('Repository not found');
         throw new NotFoundException('Repository not found');
       }
-  
-      // Get user to check if admin
+
       let user;
       try {
         user = await this.usersService.findById(userId);
         if (!user) {
-          console.log('User not found');
           throw new NotFoundException('User not found');
         }
         
-        // Admin users always have access
         if (user.role === 'admin') {
-          console.log('User is admin - access granted');
           return true;
         }
-      } catch (error) {
-        console.error('Error fetching user:', error);
-      }
-  
-      // Check if user is the repository owner
-      console.log(`Repository owner ID: ${repository.ownerId} (${typeof repository.ownerId})`);
-      console.log(`User ID: ${userId} (${typeof userId})`);
-      
-      // Convert both to strings for comparison
+      } catch (error) {}
+
       const repoOwnerIdStr = repository.ownerId.toString();
       const userIdStr = userId.toString();
       
+      // Repository owner always has access
       if (repoOwnerIdStr === userIdStr) {
-        console.log('User is repository owner - access granted');
         return true;
       }
-  
-      // If user info available, check team membership
-      if (user) {
-        // Check if user is in the repository team by email or id
-        const isTeamMember = Array.isArray(repository.team) && 
-                           repository.team.some(member => {
-                             if (typeof member === 'string') {
-                               return member === userId || member === user.email;
-                             } else if (member && typeof member === 'object') {
-                               return member.toString && member.toString() === userId;
-                             }
-                             return false;
-                           });
-  
-        if (isTeamMember) {
-          console.log('User is team member - access granted');
-          return true;
+
+      // Check if user is directly in the repository team
+      if (repository.team && Array.isArray(repository.team)) {
+        for (const member of repository.team) {
+          if (typeof member === 'string') {
+            // Check against user ID or email
+            if (member === userIdStr || (user && member === user.email)) {
+              return true;
+            }
+          } else if (member && typeof member === 'object' && member.toString) {
+            if (member.toString() === userIdStr) {
+              return true;
+            }
+          }
         }
       }
-  
-      console.log('Access denied - user is not owner or team member');
+      
+      // Check if user is a member of any team associated with this repository
+      if (user) {
+        const teamsForUser = await this.getTeamsForUser(userIdStr);
+        for (const team of teamsForUser) {
+          if (team.repositoryId.toString() === repositoryId) {
+            return true;
+          }
+        }
+      }
+
       return false;
     } catch (error) {
       console.error('Error checking repository access:', error);
-      return false; // Return false instead of throwing - better for API
+      return false;
     }
   }
-  // Check if a user is a member of a team or has repository access
+
   async checkTeamMembership(team: Team, userId: string): Promise<boolean> {
-  try {
-    console.log(`Checking team membership: teamId=${team._id}, userId=${userId}`);
-    
-    // Get user to check if admin
     try {
-      const user = await this.usersService.findById(userId);
-      if (user && user.role === 'admin') {
-        console.log('User is admin - team access granted');
-        return true;
-      }
-    } catch (error) {
-      console.error('Error fetching user for admin check:', error);
-    }
-    
-    // Check if user is team owner
-    if (team.ownerId && team.ownerId.toString() === userId) {
-      console.log('User is team owner - access granted');
-      return true;
-    }
-    
-    // Check if user is in team members array
-    if (team.members && team.members.length > 0) {
-      const isMember = team.members.some(memberId => {
-        if (typeof memberId === 'string') {
-          return memberId === userId;
-        } else if (memberId && typeof memberId === 'object') {
-          return memberId.toString && memberId.toString() === userId;
+      try {
+        const user = await this.usersService.findById(userId);
+        if (user && user.role === 'admin') {
+          return true;
         }
-        return false;
-      });
+      } catch (error) {}
       
-      if (isMember) {
-        console.log('User is team member - access granted');
-        return true;
-      }
-    }
-    
-    // Check if user is repository owner or repository team member
-    try {
-      const repository = await this.repositoriesService.findById(team.repositoryId.toString());
-      
-      // If user is repo owner, they have access
-      if (repository.ownerId && repository.ownerId.toString() === userId) {
-        console.log('User is repository owner - team access granted');
+      if (team.ownerId && team.ownerId.toString() === userId) {
         return true;
       }
       
-      // Get user email to check repo team membership
-      const user = await this.usersService.findById(userId);
-      if (!user) {
-        console.log('User not found');
-        return false;
-      }
-      
-      // Check if user's email is in repository team
-      if (Array.isArray(repository.team) && repository.team.length > 0) {
-        const isRepoTeamMember = repository.team.some(member => {
-          if (typeof member === 'string') {
-            return member === userId || member === user.email;
-          } else if (member && typeof member === 'object') {
-            return member.toString && member.toString() === userId;
+      if (team.members && team.members.length > 0) {
+        const isMember = team.members.some(memberId => {
+          if (typeof memberId === 'string') {
+            return memberId === userId;
+          } else if (memberId && typeof memberId === 'object') {
+            return memberId.toString && memberId.toString() === userId;
           }
           return false;
         });
         
-        if (isRepoTeamMember) {
-          console.log('User is repository team member - team access granted');
+        if (isMember) {
           return true;
         }
       }
+      
+      if (team.members && team.members.length > 0) {
+        for (const memberId of team.members) {
+          if (typeof memberId === 'string' && memberId === userId) {
+            return true;
+          } else if (typeof memberId === 'object' && memberId && memberId.toString() === userId) {
+            return true;
+          }
+        }
+      }
+      
+      try {
+        const repository = await this.repositoriesService.findById(team.repositoryId.toString());
+        
+        if (repository.ownerId && repository.ownerId.toString() === userId) {
+          return true;
+        }
+        
+        const user = await this.usersService.findById(userId);
+        if (!user) {
+          return false;
+        }
+        
+        if (Array.isArray(repository.team) && repository.team.length > 0) {
+          const isRepoTeamMember = repository.team.some(member => {
+            if (typeof member === 'string') {
+              return member === userId || member === user.email;
+            } else if (member && typeof member === 'object') {
+              return member.toString && member.toString() === userId;
+            }
+            return false;
+          });
+          
+          if (isRepoTeamMember) {
+            await this.teamNotificationsGateway.refreshUserTeamMemberships(userId);
+            return true;
+          }
+        }
+      } catch (error) {}
+      
+      return false;
     } catch (error) {
-      console.error('Error checking repository access:', error);
+      return false;
     }
-    
-    // If we reach here, user doesn't have access
-    console.log('Team access denied - user is not owner or team member');
-    return false;
-  } catch (error) {
-    console.error('Error checking team membership:', error);
-    return false;
   }
-}
 
-  // Check if user can edit team details
   async checkTeamEditPermission(team: Team, userId: string): Promise<boolean> {
     try {
-      // Team owner can edit team details
       if (team.ownerId.toString() === userId) {
         return true;
       }
       
-      // Check if user is repository owner
       try {
         const repository = await this.repositoriesService.findById(team.repositoryId.toString());
         if (repository && repository.ownerId.toString() === userId) {
           return true;
         }
-      } catch (error) {
-        console.error('Error checking repository owner:', error);
-      }
+      } catch (error) {}
       
-      // If we reach here, user doesn't have edit permission
       throw new ForbiddenException('Only team owner or repository owner can edit team details');
     } catch (error) {
       if (error instanceof ForbiddenException) {
         throw error;
       }
-      console.error('Error checking team edit permission:', error);
       throw new ForbiddenException('Failed to verify team edit permissions');
     }
   }

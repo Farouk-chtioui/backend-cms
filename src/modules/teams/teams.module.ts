@@ -1,10 +1,12 @@
-import { Module } from '@nestjs/common';
+// teams.module.ts
+import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Team, TeamSchema } from './teams.schema';
 import { TeamsService } from './teams.service';
 import { TeamsController } from './teams.controller';
 import { RepositoriesModule } from '../repositories/repositories.module';
 import { UsersModule } from '../users/users.module';
+import { TeamNotificationsModule } from '../team-notifications/team-notifications.module';
 
 @Module({
   imports: [
@@ -13,6 +15,8 @@ import { UsersModule } from '../users/users.module';
     ]),
     RepositoriesModule,
     UsersModule,
+    // Use forwardRef to break circular dependency
+    forwardRef(() => TeamNotificationsModule),
   ],
   controllers: [TeamsController],
   providers: [TeamsService],
