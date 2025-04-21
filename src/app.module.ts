@@ -20,6 +20,7 @@ import { MapsModule } from './modules/maps/maps.module';
 import { TeamsModule } from './modules/teams/teams.module';
 import { Teams } from 'node-appwrite';
 import { TeamNotificationsModule } from './modules/team-notifications/team-notifications.module';
+import { FcmModule } from './modules/FCM/fcm.module';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { TeamNotificationsModule } from './modules/team-notifications/team-notif
     EditorialPagesModule,
     MapsModule,
     TeamsModule,
+    FcmModule,
     TeamNotificationsModule
   ],
   providers: [LiveUpdatesGateway, ImageKitService],

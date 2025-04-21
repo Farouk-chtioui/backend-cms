@@ -54,3 +54,5 @@ pids
 
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+src/modules/FCM/appbuildercms-a0176-38f472bb25c2.json
+src/modules/FCM/firebase-service-account.json
