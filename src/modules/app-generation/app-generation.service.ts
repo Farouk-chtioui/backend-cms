@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
 import axios from 'axios';
@@ -7,6 +7,7 @@ import { Client, Query, Storage } from 'node-appwrite';
 import * as AdmZip from 'adm-zip';
 import * as crypto from 'crypto';
 import { execSync } from 'child_process';
+import { AppBuildNotificationsService } from '../app-build-notifications/app-build-notifications.service';
 
 @Injectable()
 export class AppGenerationService {
@@ -15,7 +16,10 @@ export class AppGenerationService {
   // MD5 hash cache: keys = `${appId}_${fileName}`, value = MD5 of the file
   private otaPackHashCache = new Map<string, string>();
 
-  constructor() {
+  constructor(
+    @Inject(forwardRef(() => AppBuildNotificationsService))
+    private readonly appBuildNotificationsService: AppBuildNotificationsService
+  ) {
     // Load any existing cache from disk (ota-md5-cache.json in a known location)
     const cachePath = path.resolve(__dirname, 'ota-md5-cache.json');
     if (fs.existsSync(cachePath)) {
@@ -57,6 +61,8 @@ export class AppGenerationService {
         fullAppData.mobileApp?.name ||
         'My Generated App';
       const appLogo = repositoryInfo.image || null;
+      const repositoryId = fullAppData.mobileApp?.repositoryId || null;
+      const ownerId = fullAppData.mobileApp?.ownerId || null;
 
       this.logger.log(
         `Starting app generation for appId: ${appId}, name: ${appName}`
@@ -65,13 +71,51 @@ export class AppGenerationService {
         `Update only OTA: ${updateOnlyOta}, Force rebuild: ${forceRebuild}, Force OTA update: ${forceOtaUpdate}`
       );
 
+      // Notify owner about start of build process
+      if (ownerId) {
+        await this.appBuildNotificationsService.createNotification({
+          userId: ownerId,
+          mobileAppId: appId,
+          repositoryId: repositoryId,
+          message: `Building started for "${appName}"`,
+          status: 'progress',
+          appName,
+          appLogo
+        });
+      }
+
       // Skip directory creation and template cloning
       let isNewApp = true;
 
       // 2) Generate local JSON (OTA packs)
       const otaPacks = this.splitIntoOTAPacks(fullAppData);
       if (!otaPacks || Object.keys(otaPacks).length === 0) {
+        // Notify owner about failed OTA pack generation
+        if (ownerId) {
+          await this.appBuildNotificationsService.createNotification({
+            userId: ownerId,
+            mobileAppId: appId,
+            repositoryId: repositoryId,
+            message: `Failed to generate OTA packs for "${appName}"`,
+            status: 'error',
+            appName,
+            appLogo
+          });
+        }
         throw new Error('OTA Pack generation failed!');
+      }
+
+      // Notify about OTA pack generation success
+      if (ownerId) {
+        await this.appBuildNotificationsService.createNotification({
+          userId: ownerId,
+          mobileAppId: appId,
+          repositoryId: repositoryId,
+          message: `OTA packs generated for "${appName}"`,
+          status: 'info',
+          appName,
+          appLogo
+        });
       }
 
       const packsDir = path.join(workingDir, 'assets', 'ota_packs');
@@ -112,6 +156,21 @@ export class AppGenerationService {
           apkDownloadUrl = `${process.env.APPWRITE_ENDPOINT}/storage/buckets/${process.env.APPWRITE_APK_BUCKET_ID}/files/${existingApkFileId}/download?project=${process.env.APPWRITE_PROJECT_ID}&mode=admin`;
           publicDownloadUrl = `${process.env.APPWRITE_ENDPOINT}/storage/buckets/${process.env.APPWRITE_APK_BUCKET_ID}/files/${existingApkFileId}/download?project=${process.env.APPWRITE_PROJECT_ID}`;
           qrCodeDataUrl = await QRCode.toDataURL(publicDownloadUrl);
+          
+          // Notify no changes detected
+          if (ownerId) {
+            await this.appBuildNotificationsService.createNotification({
+              userId: ownerId,
+              mobileAppId: appId,
+              repositoryId: repositoryId,
+              message: `No changes detected for "${appName}", using existing build`,
+              status: 'info',
+              appName,
+              appLogo,
+              apkUrl: apkDownloadUrl,
+              qrCodeDataUrl
+            });
+          }
         }
 
         return {
@@ -129,9 +188,45 @@ export class AppGenerationService {
       let uploadResults = {};
       let changedSomething = hasOtaChanges;
       if (hasOtaChanges || forceOtaUpdate) {
+        // Notify about OTA changes
+        if (ownerId && hasOtaChanges) {
+          await this.appBuildNotificationsService.createNotification({
+            userId: ownerId,
+            mobileAppId: appId,
+            repositoryId: repositoryId,
+            message: `Changes detected in OTA packs for "${appName}", uploading updates`,
+            status: 'info',
+            appName,
+            appLogo
+          });
+        } else if (ownerId && forceOtaUpdate) {
+          await this.appBuildNotificationsService.createNotification({
+            userId: ownerId,
+            mobileAppId: appId,
+            repositoryId: repositoryId,
+            message: `Force updating OTA packs for "${appName}"`,
+            status: 'info',
+            appName,
+            appLogo
+          });
+        }
+        
         const result = await this.uploadOtaPacksToCloud(workingDir, appId, forceOtaUpdate);
         uploadResults = result.uploadResults;
         changedSomething = result.changedSomething;
+        
+        // Notify about OTA upload completion
+        if (ownerId && changedSomething) {
+          await this.appBuildNotificationsService.createNotification({
+            userId: ownerId,
+            mobileAppId: appId,
+            repositoryId: repositoryId,
+            message: `OTA packs for "${appName}" uploaded successfully`,
+            status: 'info',
+            appName,
+            appLogo
+          });
+        }
       }
 
       // 8) Build endpoints for new or existing OTA files
@@ -177,10 +272,23 @@ export class AppGenerationService {
           new File([blob], customFileName, { type: 'application/json' })
         );
 
-        // Also add a “otaEndpoints.global” link
+        // Also add a "otaEndpoints.global" link
         otaEndpoints['global'] = `${process.env.APPWRITE_ENDPOINT}/storage/buckets/${process.env.APPWRITE_OTA_BUCKET_ID}/files/${stableEndpointsId}/view?project=${process.env.APPWRITE_PROJECT_ID}`;
       } catch (err) {
         this.logger.error(`Failed uploading endpoints file: ${err.message}`);
+        
+        // Notify about endpoints upload failure
+        if (ownerId) {
+          await this.appBuildNotificationsService.createNotification({
+            userId: ownerId,
+            mobileAppId: appId,
+            repositoryId: repositoryId,
+            message: `Error uploading endpoint file for "${appName}"`,
+            status: 'error',
+            appName,
+            appLogo
+          });
+        }
       }
 
       // 9) Update pubspec.yaml to include references to the assets/ota_packs
@@ -197,6 +305,21 @@ export class AppGenerationService {
           apkDownloadUrl = `${process.env.APPWRITE_ENDPOINT}/storage/buckets/${process.env.APPWRITE_APK_BUCKET_ID}/files/${existingApkFileId}/download?project=${process.env.APPWRITE_PROJECT_ID}&mode=admin`;
           publicDownloadUrl = `${process.env.APPWRITE_ENDPOINT}/storage/buckets/${process.env.APPWRITE_APK_BUCKET_ID}/files/${existingApkFileId}/download?project=${process.env.APPWRITE_PROJECT_ID}`;
           qrCodeDataUrl = await QRCode.toDataURL(publicDownloadUrl);
+          
+          // Notify about OTA-only update completion
+          if (ownerId) {
+            await this.appBuildNotificationsService.createNotification({
+              userId: ownerId,
+              mobileAppId: appId,
+              repositoryId: repositoryId,
+              message: `OTA packs updated for "${appName}". No new build needed.`,
+              status: 'success',
+              appName,
+              appLogo,
+              apkUrl: apkDownloadUrl,
+              qrCodeDataUrl
+            });
+          }
         }
 
         return {
@@ -220,43 +343,133 @@ export class AppGenerationService {
       }
 
       // 11) Trigger GH Actions, wait for artifact, then upload
-      // Removed preemptive APK deletion, will handle it during download/upload
+      // Notify that full build is starting
+      if (ownerId) {
+        await this.appBuildNotificationsService.createNotification({
+          userId: ownerId,
+          mobileAppId: appId,
+          repositoryId: repositoryId, 
+          message: `Starting full build for "${appName}"`,
+          status: 'progress',
+          appName,
+          appLogo
+        });
+      }
+      
       await this.triggerBuildWorkflow(fullAppData, otaEndpoints);
-      const githubArtifact = await this.trackWorkflow(appId);
-      const apkFileId = await this.downloadAndUploadApkToAppwrite(githubArtifact, appId, existingApkFileId, forceRebuild);
+      
+      // Notify that GitHub workflow is in progress
+      if (ownerId) {
+        await this.appBuildNotificationsService.createNotification({
+          userId: ownerId,
+          mobileAppId: appId,
+          repositoryId: repositoryId,
+          message: `Build in progress for "${appName}" - generating APK`,
+          status: 'progress',
+          appName,
+          appLogo
+        });
+      }
+      
+      try {
+        const githubArtifact = await this.trackWorkflow(appId);
+        
+        // Notify that artifact is ready and downloading
+        if (ownerId) {
+          await this.appBuildNotificationsService.createNotification({
+            userId: ownerId,
+            mobileAppId: appId,
+            repositoryId: repositoryId,
+            message: `APK built successfully for "${appName}", downloading...`,
+            status: 'info',
+            appName,
+            appLogo
+          });
+        }
+        
+        const apkFileId = await this.downloadAndUploadApkToAppwrite(githubArtifact, appId, existingApkFileId, forceRebuild);
 
-      // 12) Create final download/QR codes
-      const apkDownloadUrl = `${process.env.APPWRITE_ENDPOINT}/storage/buckets/${process.env.APPWRITE_APK_BUCKET_ID}/files/${apkFileId}/download?project=${process.env.APPWRITE_PROJECT_ID}&mode=admin`;
-      const publicDownloadUrl = `${process.env.APPWRITE_ENDPOINT}/storage/buckets/${process.env.APPWRITE_APK_BUCKET_ID}/files/${apkFileId}/download?project=${process.env.APPWRITE_PROJECT_ID}`;
-      const qrCodeDataUrl = await QRCode.toDataURL(publicDownloadUrl);
+        // 12) Create final download/QR codes
+        const apkDownloadUrl = `${process.env.APPWRITE_ENDPOINT}/storage/buckets/${process.env.APPWRITE_APK_BUCKET_ID}/files/${apkFileId}/download?project=${process.env.APPWRITE_PROJECT_ID}&mode=admin`;
+        const publicDownloadUrl = `${process.env.APPWRITE_ENDPOINT}/storage/buckets/${process.env.APPWRITE_APK_BUCKET_ID}/files/${apkFileId}/download?project=${process.env.APPWRITE_PROJECT_ID}`;
+        const qrCodeDataUrl = await QRCode.toDataURL(publicDownloadUrl);
+        
+        // Notify about successful build completion
+        if (ownerId) {
+          await this.appBuildNotificationsService.createNotification({
+            userId: ownerId,
+            mobileAppId: appId,
+            repositoryId: repositoryId,
+            message: `Build completed for "${appName}", APK is ready!`,
+            status: 'success',
+            appName,
+            appLogo,
+            apkUrl: apkDownloadUrl,
+            qrCodeDataUrl
+          });
+        }
 
-      const resultData = {
-        success: true,
-        message: isNewApp
-          ? 'Flutter app creation and build completed successfully'
-          : 'Flutter app update and build completed successfully',
-        appName,
-        appLogo,
-        apkUrl: apkDownloadUrl,
-        qrCodeDataUrl,
-        otaPacks: Object.fromEntries(
-          Object.keys(otaPacks).map((packName) => [
-            packName,
-            {
-              localPath: path.join(packsDir, `${packName}_pack.json`),
-              cloudFileId: uploadResults[`${packName}_pack.json`] || null,
-              endpoint: otaEndpoints[packName] || null,
-            },
-          ])
-        ),
-      };
+        const resultData = {
+          success: true,
+          message: isNewApp
+            ? 'Flutter app creation and build completed successfully'
+            : 'Flutter app update and build completed successfully',
+          appName,
+          appLogo,
+          apkUrl: apkDownloadUrl,
+          qrCodeDataUrl,
+          otaPacks: Object.fromEntries(
+            Object.keys(otaPacks).map((packName) => [
+              packName,
+              {
+                localPath: path.join(packsDir, `${packName}_pack.json`),
+                cloudFileId: uploadResults[`${packName}_pack.json`] || null,
+                endpoint: otaEndpoints[packName] || null,
+              },
+            ])
+          ),
+        };
 
-      this.logger.log(
-        `Build complete: ${JSON.stringify({ ...resultData, qrCodeDataUrl: 'omitted' })}`
-      );
-      return resultData;
+        this.logger.log(
+          `Build complete: ${JSON.stringify({ ...resultData, qrCodeDataUrl: 'omitted' })}`
+        );
+        return resultData;
+      } catch (error) {
+        // Notify about build failure
+        if (ownerId) {
+          await this.appBuildNotificationsService.createNotification({
+            userId: ownerId,
+            mobileAppId: appId,
+            repositoryId: repositoryId,
+            message: `Build failed for "${appName}": ${error.message}`,
+            status: 'error',
+            appName,
+            appLogo
+          });
+        }
+        throw error;
+      }
     } catch (error) {
       this.logger.error(`Failed to generate mobile app: ${error.message}`);
+      
+      // Notify about overall failure if we have the app ID
+      if (fullAppData.mobileApp?._id && fullAppData.mobileApp?.ownerId) {
+        const appName = fullAppData.repository?.repositoryName || 
+                       fullAppData.repository?.name ||
+                       fullAppData.mobileApp?.name ||
+                       'My Generated App';
+                      
+        await this.appBuildNotificationsService.createNotification({
+          userId: fullAppData.mobileApp.ownerId,
+          mobileAppId: fullAppData.mobileApp._id,
+          repositoryId: fullAppData.mobileApp?.repositoryId,
+          message: `App generation failed for "${appName}": ${error.message}`,
+          status: 'error',
+          appName,
+          appLogo: fullAppData.repository?.image || null
+        });
+      }
+      
       throw error;
     }
   }
@@ -844,11 +1057,7 @@ flutter:
     - assets/ota_packs/screens_pack.json
     - assets/ota_packs/onboarding_pack.json
     - assets/ota_packs/config_pack.json
-<<<<<<< HEAD
-    - assets/ota_packs/widgets_pack.json
-=======
     - assets/ota_packs/widgetScreens_pack.json
->>>>>>> 8f8dad58a824b47aa65497cdf5367b309a42588f
 `;
       pubspecContent = pubspecContent.replace(
         /(flutter:\s*)/,

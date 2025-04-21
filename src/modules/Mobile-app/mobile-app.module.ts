@@ -14,9 +14,7 @@ import { Repository, RepositorySchema } from '../Repositories/repository.schema'
 import { ImageKitService } from '../../shared/imagekit.service';
 import { WidgetModule } from '../widget/widget.module';
 import { WidgetSchema } from '../widget/schemas/widget.schema';
-
-// IMPORT your WidgetScreenModule here:
-import { WidgetScreenModule } from '../widgetscreen/widgetscreen.module'; // Adjust path as needed
+import { WidgetScreenModule } from '../widgetscreen/widgetscreen.module';
 
 @Module({
   imports: [
@@ -29,12 +27,10 @@ import { WidgetScreenModule } from '../widgetscreen/widgetscreen.module'; // Adj
     ]),
     forwardRef(() => AppDesignModule),
     forwardRef(() => AppLayoutModule),
-    AppGenerationModule,
+    forwardRef(() => AppGenerationModule), // Add forwardRef here
     ScreenModule,
     OnboardingScreensModule,
     WidgetModule,
-
-    // Add WidgetScreenModule so MobileAppModule sees the WidgetScreenService
     WidgetScreenModule,
   ],
   controllers: [MobileAppController],

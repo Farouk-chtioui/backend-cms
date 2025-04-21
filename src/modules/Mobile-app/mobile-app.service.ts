@@ -491,61 +491,67 @@ export class MobileAppService {
   // No changes needed here unless you rename "widgets" -> "widgetScreens" in your fullAppData
   // -----------------------------------------------------------------
   // Updated generateMobileApp method for mobile-app.service.ts
-async generateMobileApp(
-  fullAppData: any,
-  updateOnlyOta: boolean = false,
-  forceRebuild: boolean = false,
-  forceOtaUpdate: boolean = false,
-  username: string = 'Unknown User' // Add username parameter with default
-): Promise<any> {
-  try {
-    const mobileAppId = fullAppData.mobileApp?._id;
+  async generateMobileApp(
+    fullAppData: any,
+    updateOnlyOta: boolean = false,
+    forceRebuild: boolean = false,
+    forceOtaUpdate: boolean = false,
+    username: string = 'Unknown User'
+  ): Promise<any> {
+    try {
+      const mobileAppId = fullAppData.mobileApp?._id;
 
-    // Clear previous build status if doing a full rebuild or force rebuild is requested
-    if (!updateOnlyOta || forceRebuild) {
-      if (mobileAppId) {
-        await this.mobileAppModel.findByIdAndUpdate(mobileAppId, {
-          apkUrl: null,
-          qrCodeDataUrl: null
-        });
+      // Clear previous build status if doing a full rebuild or force rebuild is requested
+      if (!updateOnlyOta || forceRebuild) {
+        if (mobileAppId) {
+          await this.mobileAppModel.findByIdAndUpdate(mobileAppId, {
+            apkUrl: null,
+            qrCodeDataUrl: null
+          });
+        }
       }
-    }
 
-    // Log if forcing OTA update
-    if (forceOtaUpdate) {
-      this.logger.log(`Force OTA update requested for app ${mobileAppId}`);
-    }
-
-    // Update last publish info before generation
-    if (mobileAppId) {
-      this.logger.log(`Updating last publish info: ${mobileAppId} by ${username}`);
-      await this.updateLastPublishInfo(mobileAppId, username);
-    }
-
-    // PASS the entire fullAppData into the updated appGenerationService
-    // which now handles "widgetScreens" (not "widgets").
-    const result = await this.appGenerationService.generateOrUpdateFlutterApp(
-      fullAppData,
-      updateOnlyOta,
-      forceRebuild || forceOtaUpdate // Force rebuild or force OTA update
-    );
-
-    // If we got back APK URL info, store it
-    if (result.apkUrl && result.qrCodeDataUrl) {
-      if (mobileAppId) {
-        await this.mobileAppModel.findByIdAndUpdate(mobileAppId, {
-          apkUrl: result.apkUrl,
-          qrCodeDataUrl: result.qrCodeDataUrl,
-        });
+      // Log if forcing OTA update
+      if (forceOtaUpdate) {
+        this.logger.log(`Force OTA update requested for app ${mobileAppId}`);
       }
-    }
 
-    return result;
-  } catch (error) {
-    this.logger.error(`Failed to generate mobile app: ${error.message}`);
-    throw error;
+      // Update last publish info before generation
+      if (mobileAppId) {
+        this.logger.log(`Updating last publish info: ${mobileAppId} by ${username}`);
+        await this.updateLastPublishInfo(mobileAppId, username);
+      }
+
+      // Pass username to fullAppData for notifications
+      if (!fullAppData.publishedBy) {
+        fullAppData.publishedBy = username;
+      }
+
+      // PASS the entire fullAppData into the updated appGenerationService
+      // which now handles "widgetScreens" (not "widgets").
+      const result = await this.appGenerationService.generateOrUpdateFlutterApp(
+        fullAppData,
+        updateOnlyOta,
+        forceRebuild,
+        forceOtaUpdate
+      );
+
+      // If we got back APK URL info, store it
+      if (result.apkUrl && result.qrCodeDataUrl) {
+        if (mobileAppId) {
+          await this.mobileAppModel.findByIdAndUpdate(mobileAppId, {
+            apkUrl: result.apkUrl,
+            qrCodeDataUrl: result.qrCodeDataUrl,
+          });
+        }
+      }
+
+      return result;
+    } catch (error) {
+      this.logger.error(`Failed to generate mobile app: ${error.message}`);
+      throw error;
+    }
   }
-}
 
   async updateBuildResult(mobileAppId: string, apkUrl: string): Promise<any> {
     try {
@@ -575,52 +581,52 @@ async generateMobileApp(
 
   // These methods should be added to the MobileAppService class in mobile-app.service.ts
 
-async updateLastPublishInfo(mobileAppId: string, username: string): Promise<MobileApp> {
-  this.logger.debug(`Updating last publish info for app ${mobileAppId} by ${username}`);
-  
-  try {
-    if (!Types.ObjectId.isValid(mobileAppId)) {
-      throw new BadRequestException('Invalid mobile app ID');
-    }
+  async updateLastPublishInfo(mobileAppId: string, username: string): Promise<MobileApp> {
+    this.logger.debug(`Updating last publish info for app ${mobileAppId} by ${username}`);
     
-    const mobileApp = await this.mobileAppModel.findById(mobileAppId).exec();
-    if (!mobileApp) {
-      throw new NotFoundException(`Mobile app with id ${mobileAppId} not found`);
+    try {
+      if (!Types.ObjectId.isValid(mobileAppId)) {
+        throw new BadRequestException('Invalid mobile app ID');
+      }
+      
+      const mobileApp = await this.mobileAppModel.findById(mobileAppId).exec();
+      if (!mobileApp) {
+        throw new NotFoundException(`Mobile app with id ${mobileAppId} not found`);
+      }
+
+      const lastPublish = {
+        username,
+        timestamp: new Date()
+      };
+
+      return await this.mobileAppModel.findByIdAndUpdate(
+        mobileAppId,
+        { lastPublish },
+        { new: true }
+      ).exec();
+    } catch (error) {
+      this.logger.error(`Error updating last publish info: ${error.message}`);
+      throw error;
     }
-
-    const lastPublish = {
-      username,
-      timestamp: new Date()
-    };
-
-    return await this.mobileAppModel.findByIdAndUpdate(
-      mobileAppId,
-      { lastPublish },
-      { new: true }
-    ).exec();
-  } catch (error) {
-    this.logger.error(`Error updating last publish info: ${error.message}`);
-    throw error;
   }
-}
 
-async getLastPublishInfo(mobileAppId: string): Promise<{ username: string; timestamp: Date } | null> {
-  this.logger.debug(`Getting last publish info for app ${mobileAppId}`);
-  
-  try {
-    if (!Types.ObjectId.isValid(mobileAppId)) {
-      throw new BadRequestException('Invalid mobile app ID');
-    }
+  async getLastPublishInfo(mobileAppId: string): Promise<{ username: string; timestamp: Date } | null> {
+    this.logger.debug(`Getting last publish info for app ${mobileAppId}`);
     
-    const mobileApp = await this.mobileAppModel.findById(mobileAppId).exec();
-    if (!mobileApp) {
-      throw new NotFoundException(`Mobile app with id ${mobileAppId} not found`);
-    }
+    try {
+      if (!Types.ObjectId.isValid(mobileAppId)) {
+        throw new BadRequestException('Invalid mobile app ID');
+      }
+      
+      const mobileApp = await this.mobileAppModel.findById(mobileAppId).exec();
+      if (!mobileApp) {
+        throw new NotFoundException(`Mobile app with id ${mobileAppId} not found`);
+      }
 
-    return mobileApp.lastPublish;
-  } catch (error) {
-    this.logger.error(`Error getting last publish info: ${error.message}`);
-    throw error;
+      return mobileApp.lastPublish;
+    } catch (error) {
+      this.logger.error(`Error getting last publish info: ${error.message}`);
+      throw error;
+    }
   }
-}
 }

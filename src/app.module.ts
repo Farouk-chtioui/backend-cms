@@ -18,9 +18,9 @@ import { ImageKitService } from './shared/imagekit.service';
 import { EditorialPagesModule } from './modules/editorial-pages/editorial-pages.module';
 import { MapsModule } from './modules/maps/maps.module';
 import { TeamsModule } from './modules/teams/teams.module';
-import { Teams } from 'node-appwrite';
 import { TeamNotificationsModule } from './modules/team-notifications/team-notifications.module';
 import { FcmModule } from './modules/FCM/fcm.module';
+import { AppBuildNotificationsModule } from './modules/app-build-notifications/app-build-notifications.module';
 
 @Module({
   imports: [
@@ -41,7 +41,8 @@ import { FcmModule } from './modules/FCM/fcm.module';
     MapsModule,
     TeamsModule,
     FcmModule,
-    TeamNotificationsModule
+    TeamNotificationsModule,
+    AppBuildNotificationsModule,
   ],
   providers: [LiveUpdatesGateway, ImageKitService],
 })

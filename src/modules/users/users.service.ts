@@ -276,4 +276,9 @@ export class UsersService {
       throw new BadRequestException('Failed to add repository to user');
     }
   }
+
+  // ----- findAdminUsers -----
+  async findAdminUsers(): Promise<User[]> {
+    return this.userModel.find({ role: 'admin' }).exec();
+  }
 }
