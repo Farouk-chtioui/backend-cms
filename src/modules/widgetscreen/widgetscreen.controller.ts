@@ -55,4 +55,23 @@ export class WidgetScreenController {
   async deleteHeader(@Param('id') id: string) {
     return this.widgetScreenService.deleteHeader(id);
   }
+
+  // Tag-related endpoints
+  @Patch(':id/tags')
+  async updateWidgetScreenTags(
+    @Param('id') id: string,
+    @Body() body: { tagIds: string[] }
+  ) {
+    return this.widgetScreenService.updateWidgetScreenTags(id, body.tagIds);
+  }
+  
+  @Get(':id/with-tags')
+  async getWidgetScreenWithTags(@Param('id') id: string) {
+    return this.widgetScreenService.getWidgetScreenWithTags(id);
+  }
+  
+  @Get('by-tag/:tagId')
+  async findWidgetScreensByTag(@Param('tagId') tagId: string) {
+    return this.widgetScreenService.findWidgetScreensByTag(tagId);
+  }
 }

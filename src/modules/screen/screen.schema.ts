@@ -23,6 +23,7 @@ export interface ScreenMetadata {
   requiresTicket?: boolean;
   vipOnly?: boolean;
   primaryColor?: string;
+  enableTagFiltering?: boolean;
   [key: string]: any;
 }
 
@@ -44,7 +45,7 @@ export class Screen extends Document {
   })
   screenType: ScreenType;
 
-  @Prop({ type: Types.ObjectId, ref: 'WidgetScreen', default: null }) // ✅ Added widgetScreenId
+  @Prop({ type: Types.ObjectId, ref: 'WidgetScreen', default: null })
   widgetScreenId?: Types.ObjectId;
 
   @Prop({
@@ -75,6 +76,9 @@ export class Screen extends Document {
   @Prop({ type: [String], default: [] })
   tags: string[];
 
+  @Prop({ type: [{ type: Types.ObjectId, ref: 'Tag' }], default: [] })
+  filterTags: Types.ObjectId[];
+
   @Prop({
     type: {
       order: { type: Number, default: 0 },
@@ -93,7 +97,8 @@ export class Screen extends Document {
       },
       requiresTicket: { type: Boolean, default: false },
       vipOnly: { type: Boolean, default: false },
-      primaryColor: { type: String, default: '#000000' }
+      primaryColor: { type: String, default: '#000000' },
+      enableTagFiltering: { type: Boolean, default: false }
     },
     default: {
       order: 0,
@@ -108,7 +113,8 @@ export class Screen extends Document {
       layout: 'grid',
       requiresTicket: false,
       vipOnly: false,
-      primaryColor: '#000000'
+      primaryColor: '#000000',
+      enableTagFiltering: false
     }
   })
   metadata: ScreenMetadata;

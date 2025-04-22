@@ -13,7 +13,12 @@ import {
   BadRequestException 
 } from '@nestjs/common';
 import { ScreenService } from './screen.service';
-import { CreateScreenDto, UpdateScreenDto, UpdateScreenOrderDto } from './dtos/screen.dto';
+import { 
+  CreateScreenDto, 
+  UpdateScreenDto, 
+  UpdateScreenOrderDto, 
+  UpdateScreenFilterTagsDto 
+} from './dtos/screen.dto';
 import { ScreenType } from './types/screen.types';
 import { ScreenWidget } from './types/screen-widget.types';
 
@@ -95,10 +100,25 @@ export class ScreenController {
     }
     return this.screenService.duplicateScreen(id, newRoute);
   }
- // later this will have to be used to because it has the populated widgets but first fix base64 not to be in request 
+
   @Get(':id/widgets')
   @HttpCode(HttpStatus.OK)
   async getScreenWithWidgets(@Param('id') id: string) {
     return this.screenService.getScreenWithWidgets(id);
+  }
+
+  @Patch(':id/filter-tags')
+  @HttpCode(HttpStatus.OK)
+  async updateFilterTags(
+    @Param('id') id: string,
+    @Body() updateFilterTagsDto: UpdateScreenFilterTagsDto
+  ) {
+    return this.screenService.updateFilterTags(id, updateFilterTagsDto.filterTagIds);
+  }
+
+  @Get(':id/with-filter-tags')
+  @HttpCode(HttpStatus.OK)
+  async getScreenWithFilterTags(@Param('id') id: string) {
+    return this.screenService.getScreenWithFilterTags(id);
   }
 }

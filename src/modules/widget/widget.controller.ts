@@ -1,5 +1,5 @@
 // src/widget/widget.controller.ts
-import { Controller, Get, Post, Put, Delete, Body, Param } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Patch } from '@nestjs/common';
 import { WidgetService } from './widget.service';
 
 @Controller('widgets')
@@ -15,6 +15,7 @@ export class WidgetController {
   async findAll() {
     return this.widgetService.findAll();
   }
+
   @Get(':mobileAppId')
   async findByMobileApp(@Param('mobileAppId') mobileAppId: string) {
     return this.widgetService.findByMobileApp(mobileAppId);
@@ -33,5 +34,23 @@ export class WidgetController {
   @Delete(':id')
   async delete(@Param('id') id: string) {
     return this.widgetService.delete(id);
+  }
+
+  @Patch(':id/tags')
+  async updateWidgetTags(
+    @Param('id') id: string,
+    @Body() body: { tagIds: string[] }
+  ) {
+    return this.widgetService.updateWidgetTags(id, body.tagIds);
+  }
+
+  @Get(':id/with-tags')
+  async getWidgetWithTags(@Param('id') id: string) {
+    return this.widgetService.getWidgetWithTags(id);
+  }
+
+  @Get('by-tag/:tagId')
+  async findWidgetsByTag(@Param('tagId') tagId: string) {
+    return this.widgetService.findWidgetsByTag(tagId);
   }
 }

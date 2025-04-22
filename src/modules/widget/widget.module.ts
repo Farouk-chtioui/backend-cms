@@ -4,17 +4,19 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { WidgetSchema } from './schemas/widget.schema';
 import { WidgetService } from './widget.service';
 import { WidgetController } from './widget.controller';
-import { ImagesModule } from '../images/images.module'; // Import ImagesModule
+import { ImagesModule } from '../images/images.module';
+import { TagModule } from '../tag/tag.module'; // Import TagModule
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: 'Widget', schema: WidgetSchema },
     ]),
-    ImagesModule // Makes ImagesService available in WidgetModule
+    ImagesModule,
+    TagModule // Add TagModule to access TagService
   ],
-  controllers: [WidgetController ],
+  controllers: [WidgetController],
   providers: [WidgetService],
-  exports: [WidgetService] // Export WidgetService for use in other modules
+  exports: [WidgetService]
 })
 export class WidgetModule {}

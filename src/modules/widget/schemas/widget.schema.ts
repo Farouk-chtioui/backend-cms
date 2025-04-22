@@ -21,7 +21,8 @@ export const WidgetSchema = new mongoose.Schema({
   interactions: { type: mongoose.Schema.Types.Mixed, default: {} },
   performance: { type: mongoose.Schema.Types.Mixed, default: {} },
   accessibility: { type: mongoose.Schema.Types.Mixed, default: {} },
-  // NEW: mobileAppId – which ties this widget to a specific MobileApp document.
   mobileAppId: { type: mongoose.Schema.Types.ObjectId, ref: 'MobileApp', required: true },
+  // Add tags field
+  tags: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Tag' }],
   createdAt: { type: Date, default: Date.now },
 });

@@ -136,4 +136,42 @@ export class WidgetScreenService {
     }
     return updatedScreen;
   }
+
+  // --------------------------------------------------------------------------
+  // Methods for tags
+  // --------------------------------------------------------------------------
+  async updateWidgetScreenTags(id: string, tagIds: string[]): Promise<WidgetScreen> {
+    const validTagIds = tagIds.map(tagId => new Types.ObjectId(tagId));
+    
+    const updatedScreen = await this.widgetScreenModel.findByIdAndUpdate(
+      id,
+      { $set: { tags: validTagIds } },
+      { new: true }
+    );
+    
+    if (!updatedScreen) {
+      throw new NotFoundException(`WidgetScreen with id ${id} not found`);
+    }
+    
+    return updatedScreen;
+  }
+  
+  async getWidgetScreenWithTags(id: string): Promise<WidgetScreen> {
+    const screen = await this.widgetScreenModel
+      .findById(id)
+      .populate('tags', 'name color')
+      .exec();
+      
+    if (!screen) {
+      throw new NotFoundException(`WidgetScreen with id ${id} not found`);
+    }
+    
+    return screen;
+  }
+  
+  async findWidgetScreensByTag(tagId: string): Promise<WidgetScreen[]> {
+    return this.widgetScreenModel
+      .find({ tags: new Types.ObjectId(tagId) })
+      .exec();
+  }
 }

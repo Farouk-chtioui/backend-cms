@@ -1,7 +1,7 @@
 // src/widget/widget.service.ts
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { Widget } from './interfaces/widget.interface';
 import { ImagesService } from '../images/images.service';
 
@@ -128,5 +128,54 @@ export class WidgetService {
     );
     
     return populatedWidgets as unknown as Widget[];
+  }
+
+  async updateWidgetTags(id: string, tagIds: string[]): Promise<Widget> {
+    try {
+      const validTagIds = tagIds.map(tagId => new Types.ObjectId(tagId));
+      
+      const updatedWidget = await this.widgetModel.findByIdAndUpdate(
+        id,
+        { $set: { tags: validTagIds } },
+        { new: true }
+      );
+      
+      if (!updatedWidget) {
+        throw new NotFoundException(`Widget with id ${id} not found`);
+      }
+      
+      return updatedWidget;
+    } catch (error) {
+      if (error instanceof NotFoundException) throw error;
+      throw new BadRequestException(`Failed to update widget tags: ${error.message}`);
+    }
+  }
+  
+  async getWidgetWithTags(id: string): Promise<Widget> {
+    try {
+      const widget = await this.widgetModel
+        .findById(id)
+        .populate('tags', 'name color')
+        .exec();
+        
+      if (!widget) {
+        throw new NotFoundException(`Widget with id ${id} not found`);
+      }
+      
+      return widget;
+    } catch (error) {
+      if (error instanceof NotFoundException) throw error;
+      throw new BadRequestException(`Failed to get widget with tags: ${error.message}`);
+    }
+  }
+  
+  async findWidgetsByTag(tagId: string): Promise<Widget[]> {
+    try {
+      return await this.widgetModel
+        .find({ tags: new Types.ObjectId(tagId) })
+        .exec();
+    } catch (error) {
+      throw new BadRequestException(`Failed to find widgets by tag: ${error.message}`);
+    }
   }
 }

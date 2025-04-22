@@ -4,13 +4,15 @@ import { WidgetScreenController } from './widgetscreen.controller';
 import { WidgetScreenService } from './widgetscreen.service';
 import { WidgetScreenSchema } from './schemas/widgetscreen.schema';
 import { WidgetModule } from '../widget/widget.module';
+import { TagModule } from '../tag/tag.module'; // Import TagModule
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: 'WidgetScreen', schema: WidgetScreenSchema }
     ]),
-    WidgetModule // Import WidgetModule to access WidgetService
+    WidgetModule,
+    TagModule // Add TagModule to access TagService
   ],
   controllers: [WidgetScreenController],
   providers: [WidgetScreenService],

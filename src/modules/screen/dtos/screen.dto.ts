@@ -8,6 +8,7 @@ import {
   ValidateNested,
   IsEnum,
   IsNumber,
+  IsMongoId,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ScreenType } from '../types/screen.types';
@@ -96,6 +97,11 @@ export class ScreenMetadataDto {
   @IsObject()
   @IsOptional()
   additionalMetadata?: Record<string, any>;
+  
+  // Add tag filtering option
+  @IsBoolean()
+  @IsOptional()
+  enableTagFiltering?: boolean;
 }
 
 /**
@@ -142,10 +148,15 @@ export class CreateScreenDto {
   @IsOptional()
   metadata?: ScreenMetadataDto;
 
-  // ✅ New Field: widgetScreenId
   @IsString()
   @IsOptional()
   widgetScreenId?: string;
+  
+  // Add filter tags field
+  @IsArray()
+  @IsMongoId({ each: true })
+  @IsOptional()
+  filterTags?: string[];
 }
 
 /**
@@ -193,10 +204,15 @@ export class UpdateScreenDto {
   @IsOptional()
   metadata?: ScreenMetadataDto;
 
-  // ✅ New Field: widgetScreenId
   @IsString()
   @IsOptional()
   widgetScreenId?: string;
+  
+  // Add filter tags field
+  @IsArray()
+  @IsMongoId({ each: true })
+  @IsOptional()
+  filterTags?: string[];
 }
 
 /**
@@ -206,4 +222,14 @@ export class UpdateScreenOrderDto {
   @IsNumber()
   @IsNotEmpty()
   order: number;
+}
+
+/**
+ * Update Screen Filter Tags DTO
+ */
+export class UpdateScreenFilterTagsDto {
+  @IsArray()
+  @IsMongoId({ each: true })
+  @IsNotEmpty()
+  filterTagIds: string[];
 }

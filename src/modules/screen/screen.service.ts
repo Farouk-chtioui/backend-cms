@@ -4,7 +4,7 @@ import { Model, Types } from 'mongoose';
 import { Screen } from './screen.schema';
 import { CreateScreenDto, UpdateScreenDto } from './dtos/screen.dto';
 import { ScreenType } from './types/screen.types';
-import { WidgetService } from '../widget/widget.service'; // New import
+import { WidgetService } from '../widget/widget.service';
 
 @Injectable()
 export class ScreenService {
@@ -12,7 +12,7 @@ export class ScreenService {
 
   constructor(
     @InjectModel(Screen.name) private screenModel: Model<Screen>,
-    private readonly widgetService: WidgetService // New dependency
+    private readonly widgetService: WidgetService
   ) {}
 
   async create(createScreenDto: CreateScreenDto): Promise<Screen> {
@@ -33,12 +33,17 @@ export class ScreenService {
 
       const nextOrder = maxOrderScreen ? (maxOrderScreen.metadata?.order || 0) + 1 : 0;
 
+      // Process filterTags if they exist
+      const filterTags = createScreenDto.filterTags 
+        ? createScreenDto.filterTags.map(tagId => new Types.ObjectId(tagId)) 
+        : [];
+
       // Ensure default values for settings and metadata
       const screen = new this.screenModel({
         ...createScreenDto,
         appId: new Types.ObjectId(createScreenDto.appId),
-        // ✅ Fix: Ensure widgetScreenId is saved
         widgetScreenId: createScreenDto.widgetScreenId || null,
+        filterTags, // Add filter tags
 
         settings: {
           backgroundColor: '#ffffff',
@@ -60,6 +65,7 @@ export class ScreenService {
           requiresTicket: false,
           vipOnly: false,
           primaryColor: '#000000',
+          enableTagFiltering: false,
           ...createScreenDto.metadata
         }
       });
@@ -163,9 +169,14 @@ export class ScreenService {
         updateData.appId = new Types.ObjectId(updateScreenDto.appId);
       }
 
-      // ✅ Fix: If widgetScreenId was provided, ensure it's updated
+      // If widgetScreenId was provided, ensure it's updated
       if (updateScreenDto.widgetScreenId) {
         updateData.widgetScreenId = updateScreenDto.widgetScreenId;
+      }
+
+      // Process filterTags if they exist
+      if (updateScreenDto.filterTags) {
+        updateData.filterTags = updateScreenDto.filterTags.map(tagId => new Types.ObjectId(tagId));
       }
 
       const updatedScreen = await this.screenModel
@@ -479,6 +490,46 @@ export class ScreenService {
     } catch (error) {
       this.logger.error(`Error finding screens for OTA: ${error.message}`);
       throw new BadRequestException('Failed to get screens for OTA data');
+    }
+  }
+
+  // New methods for tag filtering
+  
+  async updateFilterTags(id: string, tagIds: string[]): Promise<Screen> {
+    try {
+      const screen = await this.findById(id);
+      
+      const validTagIds = tagIds.map(tagId => new Types.ObjectId(tagId));
+      
+      const updatedScreen = await this.screenModel
+        .findByIdAndUpdate(
+          new Types.ObjectId(id),
+          { $set: { filterTags: validTagIds } },
+          { new: true }
+        )
+        .exec();
+
+      return updatedScreen;
+    } catch (error) {
+      throw new BadRequestException(`Failed to update filter tags: ${error.message}`);
+    }
+  }
+
+  async getScreenWithFilterTags(id: string): Promise<Screen> {
+    try {
+      const screen = await this.screenModel
+        .findById(new Types.ObjectId(id))
+        .populate('filterTags', 'name color')
+        .exec();
+
+      if (!screen) {
+        throw new NotFoundException(`Screen with ID ${id} not found`);
+      }
+
+      return screen;
+    } catch (error) {
+      if (error instanceof NotFoundException) throw error;
+      throw new BadRequestException('Invalid screen ID');
     }
   }
 }

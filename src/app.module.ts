@@ -21,6 +21,7 @@ import { TeamsModule } from './modules/teams/teams.module';
 import { TeamNotificationsModule } from './modules/team-notifications/team-notifications.module';
 import { FcmModule } from './modules/FCM/fcm.module';
 import { AppBuildNotificationsModule } from './modules/app-build-notifications/app-build-notifications.module';
+import { TagModule } from './modules/tag/tag.module'; // Import TagModule
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { AppBuildNotificationsModule } from './modules/app-build-notifications/a
     FcmModule,
     TeamNotificationsModule,
     AppBuildNotificationsModule,
+    TagModule, // Add TagModule to the imports
   ],
   providers: [LiveUpdatesGateway, ImageKitService],
 })

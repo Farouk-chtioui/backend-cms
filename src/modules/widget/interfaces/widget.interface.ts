@@ -11,7 +11,7 @@ export interface Widget extends Document {
   readonly interactions?: any;
   readonly performance?: any;
   readonly accessibility?: any;
-  // NEW: The mobile app this widget belongs to:
   readonly mobileAppId: Types.ObjectId;
+  readonly tags?: Types.ObjectId[];  // Added tags array
   readonly createdAt?: Date;
 }
