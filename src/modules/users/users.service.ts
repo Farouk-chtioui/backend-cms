@@ -277,6 +277,160 @@ export class UsersService {
     }
   }
 
+  /**
+   * Find teams for user - helper method for repository syncing
+   */
+  async findTeamsForUser(userId: string): Promise<any[]> {
+    try {
+      // This is a simplified version to avoid circular dependencies
+      // Normally would be handled by teams.service.ts
+      const teams = await this.userModel.db.collection('teams').find({
+        $or: [
+          { ownerId: new Types.ObjectId(userId) },
+          { members: { $in: [userId, new Types.ObjectId(userId)] } }
+        ]
+      }).toArray();
+      
+      return teams || [];
+    } catch (error) {
+      console.error(`Error finding teams for user ${userId}:`, error);
+      return [];
+    }
+  }
+
+  // ----- updateRepositoryIds -----
+  async updateRepositoryIds(userId: string, repositoryIds: Types.ObjectId[]): Promise<User> {
+    try {
+      console.log(`Directly updating repositoryIds for user ${userId} with ${repositoryIds.length} repositories`);
+      
+      const user = await this.findById(userId);
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
+      
+      // Make sure all IDs are ObjectIds
+      const validRepoIds = repositoryIds
+        .filter(id => id) // Filter out null/undefined
+        .map(id => {
+          if (typeof id === 'string') {
+            return Types.ObjectId.isValid(id) ? new Types.ObjectId(id) : null;
+          } 
+          return id;
+        })
+        .filter(id => id); // Filter out any that couldn't be converted
+      
+      // Add all repositories, avoiding duplicates
+      const existingIds = user.repositoryIds?.map(id => id.toString()) || [];
+      const uniqueIds = validRepoIds.filter(id => !existingIds.includes(id.toString()));
+      
+      if (uniqueIds.length > 0) {
+        if (!user.repositoryIds) {
+          user.repositoryIds = [];
+        }
+        
+        user.repositoryIds.push(...uniqueIds);
+        await user.save();
+        console.log(`Added ${uniqueIds.length} new repositories to user ${userId}`);
+      } else {
+        console.log(`No new repositories to add for user ${userId}`);
+      }
+      
+      return user;
+    } catch (error) {
+      console.error(`Error updating repositoryIds: ${error.message}`);
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new BadRequestException(`Failed to update repository IDs: ${error.message}`);
+    }
+  }
+
+  // ----- syncUserRepositories -----
+  async syncUserRepositories(userId: string): Promise<User> {
+    try {
+      console.log(`Syncing repositories for user ${userId}`);
+      
+      const user = await this.findById(userId);
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
+      
+      // Get repositories where user is explicitly listed
+      const repositories = await this.repositoriesService.findByUserAccess(userId);
+      console.log(`Found ${repositories.length} accessible repositories for user ${userId}`);
+      
+      // Initialize repositoryIds array if it doesn't exist
+      if (!user.repositoryIds) {
+        user.repositoryIds = [];
+      }
+      
+      // Keep track of all repository IDs to ensure persistence
+      const persistentRepoIds = new Set<string>();
+      
+      // Process repositories where user has direct access
+      for (const repo of repositories) {
+        if (!repo._id) {
+          console.warn('Repository without ID found, skipping');
+          continue;
+        }
+        
+        persistentRepoIds.add(repo._id.toString());
+      }
+      
+      // Also find repositories from teams
+      try {
+        const teams = await this.findTeamsForUser(userId);
+        console.log(`Found ${teams.length} teams for user ${userId}`);
+        
+        for (const team of teams) {
+          if (team.repositoryId) {
+            const repoIdStr = typeof team.repositoryId === 'object' 
+              ? team.repositoryId.toString() 
+              : team.repositoryId;
+              
+            if (Types.ObjectId.isValid(repoIdStr)) {
+              persistentRepoIds.add(repoIdStr);
+            }
+          }
+        }
+      } catch (error) {
+        console.error(`Error finding teams for repository sync: ${error.message}`);
+      }
+      
+      // Now update user's repositoryIds from the collected set
+      let repoAdded = false;
+      
+      for (const repoIdStr of persistentRepoIds) {
+        const repoId = new Types.ObjectId(repoIdStr);
+        
+        // Check if repository already exists in the array
+        const exists = user.repositoryIds.some(id => id.equals(repoId));
+        
+        if (!exists) {
+          console.log(`Adding repository ${repoIdStr} to user ${userId}`);
+          user.repositoryIds.push(repoId);
+          repoAdded = true;
+        }
+      }
+      
+      // Save changes if any repositories were added
+      if (repoAdded) {
+        console.log(`Saving updated repositoryIds for user ${userId}, total repos: ${user.repositoryIds.length}`);
+        await user.save();
+      } else {
+        console.log(`No new repositories to add for user ${userId}, current count: ${user.repositoryIds.length}`);
+      }
+      
+      return user;
+    } catch (error) {
+      console.error(`Error syncing repositories for user ${userId}:`, error);
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new BadRequestException(`Failed to sync user repositories: ${error.message}`);
+    }
+  }
+
   // ----- findAdminUsers -----
   async findAdminUsers(): Promise<User[]> {
     return this.userModel.find({ role: 'admin' }).exec();

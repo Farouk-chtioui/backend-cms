@@ -7,6 +7,7 @@ import { LocalStrategy } from './local.strategy';
 import { JwtStrategy } from './jwt.strategy';
 import { AuthController } from './auth.controller';
 import { UsersModule } from '../users/users.module';
+import { RepositoriesModule } from '../Repositories/repositories.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { UsersModule } from '../users/users.module';
     
     // Import UsersModule for authentication dependencies
     UsersModule,
+    RepositoriesModule,  // Add this import
   ],
   providers: [
     AuthService, 

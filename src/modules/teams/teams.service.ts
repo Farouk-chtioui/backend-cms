@@ -86,6 +86,13 @@ export class TeamsService {
           
           // Update socket gateway team membership
           await this.teamNotificationsGateway.refreshUserTeamMemberships(memberIdStr);
+          
+          // Sync the user's repositories to include the team's repository
+          try {
+            await this.usersService.syncUserRepositories(memberIdStr);
+          } catch (error) {
+            console.error(`Failed to sync repositories for user ${memberIdStr}:`, error);
+          }
         }
 
         // Send notifications to members that they've been added to the team
@@ -325,6 +332,13 @@ export class TeamsService {
         
         for (const memberId of addedMembers) {
           await this.teamNotificationsGateway.refreshUserTeamMemberships(memberId);
+          
+          // Sync repositories for newly added members
+          try {
+            await this.usersService.syncUserRepositories(memberId);
+          } catch (error) {
+            console.error(`Failed to sync repositories for user ${memberId}:`, error);
+          }
         }
       }
       
@@ -943,6 +957,20 @@ export class TeamsService {
       const addedBy = await this.usersService.findById(addedByUserId);
       const addedByName = addedBy ? addedBy.username || addedBy.email || 'A team admin' : 'A team admin';
       
+      // Get the repository for this team to ensure it's shared with all members
+      const repository = await this.repositoriesService.findById(team.repositoryId.toString());
+      
+      // Do an explicit repository team sync to ensure members have access to the repository
+      try {
+        const memberStrings = members.map(m => typeof m === 'object' ? m.toString() : m);
+        await this.repositoriesService.syncTeamMembersWithRepository(
+          team.repositoryId.toString(),
+          memberStrings
+        );
+      } catch (error) {
+        console.error(`Error syncing team members with repository during notification: ${error.message}`);
+      }
+      
       for (const memberId of members) {
         let memberIdStr: string;
         
@@ -953,14 +981,55 @@ export class TeamsService {
               const user = await this.usersService.findOneByEmail(memberId);
               if (!user) continue;
               memberIdStr = user._id.toString();
+              
+              // Sync repositories for the user - IMPORTANT, this helps persistence
+              await this.usersService.syncUserRepositories(memberIdStr);
+              
+              // Also explicitly add the repository to the user
+              try {
+                await this.usersService.addRepositoryToUser(memberIdStr, team.repositoryId.toString());
+              } catch (error) {
+                // Might fail if repository is already added, which is fine
+                console.log(`Repository might already be added to user: ${error.message}`);
+              }
             } catch (e) {
               continue; // Skip if user not found by email
             }
           } else {
             memberIdStr = memberId;
+            
+            // Sync repositories for the user
+            try {
+              await this.usersService.syncUserRepositories(memberIdStr);
+              
+              // Also explicitly add the repository to the user
+              try {
+                await this.usersService.addRepositoryToUser(memberIdStr, team.repositoryId.toString());
+              } catch (error) {
+                // Might fail if repository is already added, which is fine
+                console.log(`Repository might already be added to user: ${error.message}`);
+              }
+            } catch (error) {
+              console.error(`Failed to sync repositories for user ${memberIdStr}:`, error);
+            }
           }
         } else if (memberId && typeof memberId === 'object' && 'toString' in memberId) {
           memberIdStr = (memberId as Types.ObjectId).toString();
+          
+          // Sync repositories for the user
+          try {
+            await this.usersService.syncUserRepositories(memberIdStr);
+            
+            // Also explicitly add the repository to the user
+            try {
+              await this.usersService.addRepositoryToUser(memberIdStr, team.repositoryId.toString());
+            } catch (error) {
+              // Might fail if repository is already added, which is fine
+              console.log(`Repository might already be added to user: ${error.message}`);
+            }
+          } catch (error) {
+            console.error(`Failed to sync repositories for user ${memberIdStr}:`, error);
+          }
         } else {
           console.error('Invalid member ID format:', memberId);
           continue; // Skip this invalid member
@@ -981,6 +1050,32 @@ export class TeamsService {
           senderId: addedByUserId
         });
       }
+      
+      // Extra step: Force a refresh of repositories for all team members
+      setTimeout(async () => {
+        try {
+          for (const memberId of members) {
+            let memberIdStr: string;
+            if (typeof memberId === 'string') {
+              if (memberId.includes('@')) {
+                const user = await this.usersService.findOneByEmail(memberId).catch(() => null);
+                if (!user) continue;
+                memberIdStr = user._id.toString();
+              } else {
+                memberIdStr = memberId;
+              }
+            } else {
+              memberIdStr = (memberId as Types.ObjectId).toString();
+            }
+            
+            await this.repositoriesService.refreshRepositoriesForUser(memberIdStr).catch(e => 
+              console.error(`Error in delayed repository refresh for ${memberIdStr}: ${e.message}`)
+            );
+          }
+        } catch (error) {
+          console.error('Error in delayed repository refresh:', error);
+        }
+      }, 2000); // 2 second delay to ensure DB operations have completed
     } catch (error) {
       console.error('Error sending team addition notifications:', error);
     }

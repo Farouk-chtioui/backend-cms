@@ -46,10 +46,43 @@ export class User extends Document {
   async comparePassword(plainPassword: string): Promise<boolean> {
     return bcrypt.compare(plainPassword, this.password);
   }
+
+  /**
+   * Adds a repository ID to the user's repositoryIds array if it doesn't already exist
+   * @param repositoryId The repository ID to add
+   * @returns boolean - true if added, false if it was already there
+   */
+  addRepository(repositoryId: Types.ObjectId): boolean {
+    if (!this.repositoryIds) {
+      this.repositoryIds = [];
+    }
+    
+    // Check if repository already exists in the array
+    const exists = this.repositoryIds.some(id => id.equals(repositoryId));
+    if (!exists) {
+      this.repositoryIds.push(repositoryId);
+      return true;
+    }
+    return false;
+  }
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
 
 UserSchema.methods.comparePassword = async function (plainPassword: string): Promise<boolean> {
   return bcrypt.compare(plainPassword, this.password);
+};
+
+UserSchema.methods.addRepository = function(repositoryId: Types.ObjectId): boolean {
+  if (!this.repositoryIds) {
+    this.repositoryIds = [];
+  }
+  
+  // Check if repository already exists in the array
+  const exists = this.repositoryIds.some(id => id.equals(repositoryId));
+  if (!exists) {
+    this.repositoryIds.push(repositoryId);
+    return true;
+  }
+  return false;
 };

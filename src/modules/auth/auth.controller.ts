@@ -12,10 +12,14 @@ import {
 import { Response } from 'express';
 import { AuthService } from './auth.service';
 import { LocalAuthGuard } from './local-auth.guard';
+import { RepositoriesService } from '../Repositories/repositories.service';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private authService: AuthService) {}
+  constructor(
+    private authService: AuthService,
+    private readonly repositoriesService: RepositoriesService
+  ) {}
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
@@ -43,6 +47,18 @@ export class AuthController {
         maxAge: 24 * 60 * 60 * 1000, // 24 hours
         path: '/', // Ensure cookie is available for all paths
       });
+
+      // Trigger a repository refresh in the background to ensure all repositories are available
+      if (loginResult.userId) {
+        // Use setTimeout to make this a non-blocking operation
+        setTimeout(async () => {
+          try {
+            await this.repositoriesService.refreshRepositoriesForUser(loginResult.userId);
+          } catch (error) {
+            console.error('Error refreshing repositories on login:', error);
+          }
+        }, 100);
+      }
 
       // Return user info without the token
       return {
