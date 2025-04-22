@@ -12,7 +12,9 @@ import {
   
   @WebSocketGateway({
     cors: {
-      origin: '*', // Update this for production
+      origin: 'http://localhost:3000',
+      methods: ['GET', 'POST'],
+      credentials: true
     },
   })
   export class TeamNotificationsGateway implements OnGatewayConnection, OnGatewayDisconnect {
