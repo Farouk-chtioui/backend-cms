@@ -99,4 +99,18 @@ export class AppDesignService {
   async updateAppDesign(designId: string, designData: Partial<AppDesign>): Promise<AppDesign> {
     return this.appDesignModel.findByIdAndUpdate(designId, designData, { new: true }).exec();
   }
+
+  /**
+   * Delete an app design by ID
+   * @param id The ID of the app design to delete
+   * @returns The deleted app design or null if not found
+   */
+  async deleteAppDesign(id: string): Promise<AppDesign | null> {
+    try {
+      return await this.appDesignModel.findByIdAndDelete(id).exec();
+    } catch (error) {
+      console.error(`Error deleting app design ${id}:`, error);
+      throw error;
+    }
+  }
 }

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Body, Param } from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, Param, Delete, HttpStatus, HttpException } from '@nestjs/common';
 import { RepositoriesService } from './repositories.service';
 import { CreateRepositoryDto } from './CreateRepositoryDto';
 
@@ -27,5 +27,21 @@ export class RepositoriesController {
     @Body() updateRepositoryDto: Partial<CreateRepositoryDto>
   ) {
     return this.repositoriesService.update(id, updateRepositoryDto);
+  }
+
+  @Delete(':id')
+  async delete(@Param('id') id: string) {
+    try {
+      const result = await this.repositoriesService.delete(id);
+      if (!result) {
+        throw new HttpException('Repository not found', HttpStatus.NOT_FOUND);
+      }
+      return { message: 'Repository successfully deleted', id };
+    } catch (error) {
+      throw new HttpException(
+        error.message || 'Error deleting repository', 
+        error.status || HttpStatus.INTERNAL_SERVER_ERROR
+      );
+    }
   }
 }

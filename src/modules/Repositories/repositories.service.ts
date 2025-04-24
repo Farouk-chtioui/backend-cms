@@ -497,4 +497,42 @@ export class RepositoriesService {
       console.error(`Error refreshing repositories for user ${userId}:`, error);
     }
   }
+
+  /**
+   * Deletes a repository by ID and all associated data
+   * @param id The repository ID to delete
+   * @returns The deleted repository or null if not found
+   */
+  async delete(id: string): Promise<Repository | null> {
+    try {
+      // Find the repository first to get all its data
+      const repository = await this.findById(id);
+      if (!repository) {
+        throw new Error(`Repository with ID ${id} not found`);
+      }
+
+      // Delete any associated mobile app first
+      if (repository.mobileAppId) {
+        try {
+          await this.mobileAppService.delete(repository.mobileAppId.toString());
+        } catch (error) {
+          console.error(`Error deleting mobile app for repository ${id}:`, error);
+          // Continue with repository deletion even if app deletion fails
+        }
+      }
+
+      // Delete the repository
+      const deletedRepository = await this.repositoryModel.findByIdAndDelete(id).exec();
+      
+      // Log success if found and deleted
+      if (deletedRepository) {
+        console.log(`Successfully deleted repository ${id}`);
+      }
+
+      return deletedRepository;
+    } catch (error) {
+      console.error(`Error deleting repository ${id}:`, error);
+      throw error;
+    }
+  }
 }

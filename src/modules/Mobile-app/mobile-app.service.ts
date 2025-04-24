@@ -629,4 +629,35 @@ export class MobileAppService {
       throw error;
     }
   }
+
+  /**
+   * Delete a mobile app by ID
+   * @param id The ID of the mobile app to delete
+   * @returns The deleted mobile app or null if not found
+   */
+  async delete(id: string) {
+    try {
+      const mobileApp = await this.mobileAppModel.findByIdAndDelete(id).exec();
+      if (!mobileApp) {
+        console.log(`Mobile app with ID ${id} not found for deletion`);
+        return null;
+      }
+      
+      // If the app has an appDesign, delete it too
+      if (mobileApp.appDesignId) {
+        try {
+          await this.appDesignService.deleteAppDesign(mobileApp.appDesignId.toString());
+        } catch (error) {
+          console.error(`Error deleting app design for mobile app ${id}:`, error);
+          // Continue with cleanup even if app design deletion fails
+        }
+      }
+      
+      console.log(`Successfully deleted mobile app ${id}`);
+      return mobileApp;
+    } catch (error) {
+      console.error(`Error deleting mobile app ${id}:`, error);
+      throw error;
+    }
+  }
 }
