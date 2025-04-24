@@ -31,8 +31,6 @@ export class TeamNotificationsController {
         throw new HttpException('userId is required', HttpStatus.BAD_REQUEST);
       }
       
-      console.log(`DEBUG: Fetching raw notifications for user: ${userId}`);
-      
       // Get raw notifications from database
       const rawNotifications = await this.teamNotificationsService.getNotificationsByUser(userId);
       
@@ -71,9 +69,7 @@ export class TeamNotificationsController {
         throw new HttpException('userId is required', HttpStatus.BAD_REQUEST);
       }
       
-      console.log(`Fetching notifications for user: ${userId}`);
       const notifications = await this.teamNotificationsService.getNotificationsByUser(userId);
-      console.log(`Found ${notifications.length} notifications for user ${userId}`);
       
       // Format notifications for frontend response
       const formattedNotifications = await Promise.all(
@@ -83,7 +79,6 @@ export class TeamNotificationsController {
         })
       );
       
-      console.log(`Returning ${formattedNotifications.length} formatted notifications`);
       return formattedNotifications;
     } catch (error) {
       console.error('Error in getNotifications:', error);
@@ -104,7 +99,6 @@ export class TeamNotificationsController {
         throw new HttpException('teamId and userId are required', HttpStatus.BAD_REQUEST);
       }
       
-      console.log(`Fetching team notifications for team: ${teamId}, user: ${userId}`);
       const notifications = await this.teamNotificationsService.getNotificationsByTeam(teamId);
       const teamName = await this.getTeamName(teamId);
       
@@ -113,7 +107,6 @@ export class TeamNotificationsController {
         this.teamNotificationsService.formatNotification(notification, teamName)
       );
       
-      console.log(`Returning ${formattedNotifications.length} formatted team notifications`);
       return formattedNotifications;
     } catch (error) {
       console.error('Error in getTeamNotifications:', error);
@@ -127,7 +120,6 @@ export class TeamNotificationsController {
   @Put(':id/read')
   async markAsRead(@Param('id') id: string) {
     try {
-      console.log(`Marking notification as read: ${id}`);
       const notification = await this.teamNotificationsService.markAsRead(id);
       const teamName = await this.getTeamName(notification.teamId.toString());
       
@@ -147,7 +139,6 @@ export class TeamNotificationsController {
       if (!userId) {
         throw new HttpException('userId is required', HttpStatus.BAD_REQUEST);
       }
-      console.log(`Marking all notifications as read for user: ${userId}`);
       const result = await this.teamNotificationsService.markAllAsRead(userId);
       return { success: result };
     } catch (error) {
@@ -162,7 +153,6 @@ export class TeamNotificationsController {
   @Delete('team/:teamId')
   async deleteAllForTeam(@Param('teamId') teamId: string) {
     try {
-      console.log(`Deleting all notifications for team: ${teamId}`);
       const result = await this.teamNotificationsService.deleteAllForTeam(teamId);
       return { success: result };
     } catch (error) {

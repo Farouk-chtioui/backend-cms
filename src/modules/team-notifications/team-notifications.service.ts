@@ -47,7 +47,6 @@ export class TeamNotificationsService {
       });
 
       const savedNotification = await newNotification.save();
-      console.log('Created notification:', savedNotification);
       
       // Get team name if not provided
       let teamName = data.teamName;
@@ -67,7 +66,6 @@ export class TeamNotificationsService {
       // If the user is admin but also the sender, don't send the notification to them
       const isAdminSender = data.isAdmin && data.senderId && data.userId === data.senderId;
       if (data.isAdmin && !isAdminSender) {
-        console.log(`Sending direct notification to admin user: ${data.userId}`);
         this.teamNotificationsGateway.sendNotificationToUser(
           data.userId,
           formattedNotification
@@ -109,12 +107,9 @@ export class TeamNotificationsService {
   }
 
   async getNotificationsByUser(userId: string): Promise<TeamNotification[]> {
-    console.log(`Looking up notifications for user ID: ${userId}`);
-    
     try {
       // Check if userId is valid
       if (!userId) {
-        console.log('Invalid userId provided');
         return [];
       }
       
@@ -134,19 +129,13 @@ export class TeamNotificationsService {
         .sort({ createdAt: -1 })
         .exec();
       
-      console.log(`Found ${notifications.length} notifications using standard query`);
-      
       // If that fails, try querying all and filtering manually
       if (notifications.length === 0) {
-        console.log('No notifications found with direct query, trying string comparison...');
-        
         // Get all notifications
         const allNotifications = await this.teamNotificationModel
           .find()
           .sort({ createdAt: -1 })
           .exec();
-        
-        console.log(`Total notifications in DB: ${allNotifications.length}`);
         
         // Manually filter by comparing IDs as strings
         notifications = allNotifications.filter(notification => {
@@ -154,18 +143,6 @@ export class TeamNotificationsService {
           const notificationUserId = String(notification.userId);
           return notificationUserId === userId;
         });
-        
-        console.log(`Found ${notifications.length} notifications after string comparison filtering`);
-        
-        // If still no results, dump some example data for debugging
-        if (notifications.length === 0 && allNotifications.length > 0) {
-          const sampleNotif = allNotifications[0];
-          console.log('Sample notification for debugging:');
-          console.log(`- _id: ${sampleNotif._id} (${typeof sampleNotif._id})`);
-          console.log(`- userId: ${sampleNotif.userId} (${typeof sampleNotif.userId})`);
-          console.log(`- Looking for userId: ${userId} (${typeof userId})`);
-          console.log(`- String comparison: "${String(sampleNotif.userId)}" === "${userId}" => ${String(sampleNotif.userId) === userId}`);
-        }
       }
       
       // Ensure team memberships are refreshed when fetching notifications
@@ -183,8 +160,6 @@ export class TeamNotificationsService {
   }
 
   async getNotificationsByTeam(teamId: string): Promise<TeamNotification[]> {
-    console.log(`Looking up notifications for team ID: ${teamId}`);
-    
     try {
       let teamIdQuery;
       
@@ -202,7 +177,6 @@ export class TeamNotificationsService {
         .sort({ createdAt: -1 })
         .exec();
       
-      console.log(`Found ${notifications.length} notifications for team ${teamId}`);
       return notifications;
     } catch (error) {
       console.error(`Error fetching notifications for team ${teamId}:`, error);
@@ -211,8 +185,6 @@ export class TeamNotificationsService {
   }
 
   async markAsRead(notificationId: string): Promise<TeamNotification> {
-    console.log(`Marking notification as read: ${notificationId}`);
-    
     try {
       const notification = await this.teamNotificationModel
         .findByIdAndUpdate(notificationId, { read: true }, { new: true })
@@ -222,7 +194,6 @@ export class TeamNotificationsService {
         throw new Error(`Notification with ID ${notificationId} not found`);
       }
       
-      console.log(`Notification ${notificationId} marked as read`);
       return notification;
     } catch (error) {
       console.error(`Error marking notification ${notificationId} as read:`, error);
@@ -231,8 +202,6 @@ export class TeamNotificationsService {
   }
 
   async markAllAsRead(userId: string): Promise<boolean> {
-    console.log(`Marking all notifications as read for user: ${userId}`);
-    
     try {
       let userIdQuery;
       
@@ -251,7 +220,6 @@ export class TeamNotificationsService {
         )
         .exec();
       
-      console.log(`Marked ${result.modifiedCount} notifications as read for user ${userId}`);
       return result.modifiedCount > 0;
     } catch (error) {
       console.error(`Error marking all notifications as read for user ${userId}:`, error);
@@ -260,8 +228,6 @@ export class TeamNotificationsService {
   }
 
   async deleteAllForTeam(teamId: string): Promise<boolean> {
-    console.log(`Deleting all notifications for team: ${teamId}`);
-    
     try {
       let teamIdQuery;
       
@@ -277,7 +243,6 @@ export class TeamNotificationsService {
         .deleteMany({ teamId: teamIdQuery })
         .exec();
       
-      console.log(`Deleted ${result.deletedCount} notifications for team ${teamId}`);
       return result.deletedCount > 0;
     } catch (error) {
       console.error(`Error deleting notifications for team ${teamId}:`, error);
