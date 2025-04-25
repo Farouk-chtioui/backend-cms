@@ -23,6 +23,7 @@ export class AppBuildNotificationsService {
     userId: string;
     mobileAppId: string;
     repositoryId?: string;
+    buildId?: string; // Add buildId for tracking specific builds
     message: string;
     status: 'success' | 'error' | 'progress' | 'info';
     appName?: string;
@@ -60,18 +61,28 @@ export class AppBuildNotificationsService {
       // Format notification for frontend
       const formattedNotification = this.formatNotification(savedNotification);
       
-      // Send notification via socket to the initiating user
-      this.appBuildNotificationsGateway.sendNotificationToUser(
-        data.userId,
-        formattedNotification
-      );
+      // If buildId is provided, send notification to the build-specific room
+      if (data.buildId) {
+        this.appBuildNotificationsGateway.sendBuildNotification(
+          data.buildId,
+          formattedNotification
+        );
+        this.logger.debug(`Sent build notification to build room: ${data.buildId}`);
+      } else {
+        // Otherwise send via direct socket to the user
+        this.appBuildNotificationsGateway.sendNotificationToUser(
+          data.userId,
+          formattedNotification
+        );
+      }
 
       // Notify all repository collaborators if repository ID is provided
       if (data.repositoryId) {
         await this.notifyRepositoryCollaborators(
           data.repositoryId,
           formattedNotification,
-          data.userId // exclude the current user from getting duplicate notifications
+          data.userId, // exclude the current user from getting duplicate notifications
+          data.buildId // pass buildId for collaborator notifications
         );
       }
       
@@ -82,11 +93,12 @@ export class AppBuildNotificationsService {
     }
   }
 
-  // New method to notify all repository collaborators
+  // Modified method to notify repository collaborators
   private async notifyRepositoryCollaborators(
     repositoryId: string, 
     notification: any, 
-    excludeUserId: string
+    excludeUserId: string,
+    buildId?: string // Optional buildId parameter
   ): Promise<void> {
     try {
       // Get repository to find team members
@@ -126,7 +138,7 @@ export class AppBuildNotificationsService {
         // Track existing user IDs to avoid duplicate processing
         const processedUserIds = new Set<string>([excludeUserId]);
         
-        for (const member of repository.team as any[]) { // Cast to any[] to resolve type error
+        for (const member of repository.team as any[]) {
           try {
             // Skip if we can't process this member
             if (!member) continue;
@@ -222,9 +234,18 @@ export class AppBuildNotificationsService {
           // Save notification to database
           const savedNotification = await collaboratorNotification.save();
           
-          // Format and send via websocket
+          // Format notification for frontend
           const formattedNotification = this.formatNotification(savedNotification);
-          this.appBuildNotificationsGateway.sendNotificationToUser(userIdStr, formattedNotification);
+          
+          // If buildId is provided, send to the build-specific room
+          if (buildId) {
+            // We don't subscribe collaborators automatically to the build
+            // This will go to their pending notifications
+            this.appBuildNotificationsGateway.sendNotificationToUser(userIdStr, formattedNotification);
+          } else {
+            // Regular notification for collaborators
+            this.appBuildNotificationsGateway.sendNotificationToUser(userIdStr, formattedNotification);
+          }
         } catch (notifyError) {
           this.logger.error(`Error notifying user ${userIdValue}: ${notifyError.message}`);
         }
@@ -256,6 +277,7 @@ export class AppBuildNotificationsService {
     };
   }
 
+  // Rest of the methods remain unchanged
   async getNotificationsByUser(userId: string): Promise<AppBuildNotification[]> {
     this.logger.log(`Fetching build notifications for user ID: ${userId}`);
     
