@@ -22,9 +22,9 @@ export class ImagesService {
     createImageDto: CreateImageDto,
   ): Promise<Image> {
     try {
-      const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/gif'];
-      if (!allowedMimeTypes.includes(file.mimetype)) {
-        throw new BadRequestException('Invalid file type. Only JPG, PNG, and GIF files are allowed.');
+      // Validate file existence and content
+      if (!file || !file.buffer || file.buffer.length === 0) {
+        throw new BadRequestException('Invalid file or empty file received');
       }
 
       if (!isValidObjectId(createImageDto.appId)) {
