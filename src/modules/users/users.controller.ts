@@ -40,6 +40,36 @@ export class UsersController {
     }
   }
 
+  // Add new endpoint for admin to create users
+  @Post()
+  async createUser(@Body() body) {
+    const { email, username, password, role } = body;
+
+    if (!password || !email || !username) {
+      throw new BadRequestException('Email, username, and password are required');
+    }
+
+    try {
+      // Use the provided role or default to 'user'
+      const userRole = role || 'user';
+      
+      const newUser = await this.usersService.create(
+        email, 
+        username, 
+        password, 
+        userRole
+      );
+      
+      // Remove sensitive information
+      const userResponse = newUser.toObject();
+      delete userResponse.password;
+      
+      return userResponse;
+    } catch (error) {
+      throw new BadRequestException(error.message);
+    }
+  }
+
   @Post('register')
   async register(@Body() body) {
     const { email, username, password, profileImage } = body;
