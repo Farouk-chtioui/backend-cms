@@ -65,7 +65,7 @@ export class ImagesController {
     @UploadedFile(
       new ParseFilePipe({
         validators: [
-          new FileTypeValidator({ fileType: /(jpg|jpeg|png|gif)$/ }),
+          new FileTypeValidator({ fileType: /(jpg|jpeg|png|gif|webp|svg)$/ }), // Added more supported formats
           new CustomFileSizeValidator(),
         ],
         errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY,

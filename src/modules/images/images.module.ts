@@ -15,7 +15,13 @@ import { extname } from 'path';
         fileSize: 30 * 1024 * 1024, // 30MB maximum file size
       },
       fileFilter: (req, file, callback) => {
-        const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/gif'];
+        const allowedMimeTypes = [
+          'image/jpeg', 
+          'image/png', 
+          'image/gif',
+          'image/webp',
+          'image/svg+xml'
+        ];
         if (!allowedMimeTypes.includes(file.mimetype)) {
           return callback(new Error('Only image files are allowed!'), false);
         }
