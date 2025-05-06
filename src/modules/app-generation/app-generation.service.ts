@@ -774,7 +774,8 @@ export class AppGenerationService {
       'screens',
       'onboarding',
       'config',
-      'widgetScreens'
+      'widgetScreens',
+      'maps'
     ];
     
     // For each file we uploaded, create an endpoint
