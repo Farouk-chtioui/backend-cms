@@ -121,8 +121,15 @@ export class AppBuildNotificationsService {
       if (repository.ownerId) {
         let ownerIdStr: string;
         
+        // Handle different types of ownerIds safely
         if (typeof repository.ownerId === 'object' && repository.ownerId !== null) {
-          ownerIdStr = repository.ownerId ? String(repository.ownerId) : '';
+          // Check if it's an object with _id property
+          const ownerObj = repository.ownerId as any;
+          if (ownerObj._id) {
+            ownerIdStr = ownerObj._id.toString();
+          } else {
+            ownerIdStr = ownerObj.toString();
+          }
         } else {
           ownerIdStr = String(repository.ownerId || '');
         }
@@ -164,11 +171,12 @@ export class AppBuildNotificationsService {
               // Handle direct user IDs - make sure it's a string
               let userId: string;
               
-              if (typeof member === 'object') {
-                if (member._id) {
-                  userId = member._id.toString();
+              if (typeof member === 'object' && member !== null) {
+                const memberObj = member as any;
+                if (memberObj._id) {
+                  userId = memberObj._id.toString();
                 } else {
-                  userId = member.toString();
+                  userId = memberObj.toString();
                 }
               } else {
                 userId = String(member);
@@ -212,8 +220,21 @@ export class AppBuildNotificationsService {
             continue;
           }
           
-          const userIdStr = String(userIdValue);
-          this.logger.debug(`Creating notification for user: ${userIdStr}`);
+          // Ensure userIdValue is a string, not an object
+          let userIdStr: string;
+          
+          if (typeof userIdValue === 'object' && userIdValue !== null) {
+            const userObj = userIdValue as any;
+            if (userObj._id) {
+              userIdStr = userObj._id.toString();
+            } else {
+              userIdStr = userObj.toString();
+            }
+          } else {
+            userIdStr = String(userIdValue);
+          }
+            
+          this.logger.debug(`Creating notification for user ID: ${userIdStr}`);
           
           // Create a new notification object
           const collaboratorNotification = new this.appBuildNotificationModel({
@@ -247,7 +268,7 @@ export class AppBuildNotificationsService {
             this.appBuildNotificationsGateway.sendNotificationToUser(userIdStr, formattedNotification);
           }
         } catch (notifyError) {
-          this.logger.error(`Error notifying user ${userIdValue}: ${notifyError.message}`);
+          this.logger.error(`Error notifying user ${typeof userIdValue === 'object' ? 'Object' : userIdValue}: ${notifyError.message}`);
         }
       }
       

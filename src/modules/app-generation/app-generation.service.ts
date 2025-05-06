@@ -944,12 +944,12 @@ export class AppGenerationService {
   }
 
   // -----------------------------------------------------------------
-  // UPDATED: Instead of separate “widgets” OTA, we create a single “widgetScreens” pack
+  // UPDATED: Instead of separate "widgets" OTA, we create a single "widgetScreens" pack
   // containing each WidgetScreen + its child widgets. 
   // If you have normal screens too, you can still keep them in `screens` as is.
   // -----------------------------------------------------------------
   private splitIntoOTAPacks(fullAppData: any): Record<string, any> {
-    // 1) Build “screens” (unchanged)
+    // 1) Build "screens" (unchanged)
     const cleanScreens = (fullAppData.screens || []).map((screen: any) => {
       const cleanScreen = {
         _id: screen._id,
@@ -971,7 +971,7 @@ export class AppGenerationService {
       return cleanScreen;
     });
   
-    // 2) Build “widgetScreens” (NEW: now includes `header`)
+    // 2) Build "widgetScreens" (NEW: now includes `header`)
     const processedWidgetScreens = (fullAppData.widgetScreens || []).map((ws: any) => {
       // gather all child widgets
       const childWidgets = (ws.widgets || []).map((w: any) => {
@@ -1008,8 +1008,17 @@ export class AppGenerationService {
         widgets: childWidgets,
       };
     });
+    
+    // 3) Build map data OTA pack
+    const mapData = fullAppData.mapData || {
+      location: null,
+      center: { lat: 51.505, lng: -0.09 },
+      zoom: 15,
+      pins: [],
+      overlays: []
+    };
   
-    // 3) Build final packs, referencing each key as needed
+    // 4) Build final packs, referencing each key as needed
     const packs: Record<string, any> = {
       design: fullAppData.appDesign || {},
       layout: fullAppData.appLayout || {},
@@ -1017,9 +1026,11 @@ export class AppGenerationService {
       onboarding: fullAppData.onboardingScreens || [],
       // use the processed array with header
       widgetScreens: processedWidgetScreens,
+      // add maps as a separate OTA pack
+      maps: mapData
     };
   
-    // 4) Basic config pack
+    // 5) Basic config pack
     const mobileApp = fullAppData.mobileApp || {};
     const repository = fullAppData.repository || {};
     packs.config = {
@@ -1031,14 +1042,14 @@ export class AppGenerationService {
       coverImage: repository.coverImage || null,
     };
   
-    // 5) Return
+    // 6) Return
     return packs;
   }
   
 
   // -----------------------------------------------------------------
   // Insert references to the OTA pack assets into pubspec.yaml
-  // (Now references “widgetScreens_pack.json” instead of “widgets_pack.json”)
+  // (Now references "widgetScreens_pack.json" instead of "widgets_pack.json")
   // -----------------------------------------------------------------
   private updatePubspecYaml(workingDir: string) {
     const pubspecPath = path.join(workingDir, 'pubspec.yaml');
@@ -1046,7 +1057,7 @@ export class AppGenerationService {
 
     let pubspecContent = fs.readFileSync(pubspecPath, 'utf8');
     if (!pubspecContent.includes('assets/ota_packs/')) {
-      // We remove the line for “widgets_pack.json” and add “widgetScreens_pack.json”
+      // We remove the line for "widgets_pack.json" and add "widgetScreens_pack.json"
       const assetConfig = `
 flutter:
   assets:
@@ -1058,6 +1069,7 @@ flutter:
     - assets/ota_packs/onboarding_pack.json
     - assets/ota_packs/config_pack.json
     - assets/ota_packs/widgetScreens_pack.json
+    - assets/ota_packs/maps_pack.json
 `;
       pubspecContent = pubspecContent.replace(
         /(flutter:\s*)/,

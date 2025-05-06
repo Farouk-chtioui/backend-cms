@@ -15,6 +15,7 @@ import { ImageKitService } from '../../shared/imagekit.service';
 import { WidgetModule } from '../widget/widget.module';
 import { WidgetSchema } from '../widget/schemas/widget.schema';
 import { WidgetScreenModule } from '../widgetscreen/widgetscreen.module';
+import { MapsModule } from '../maps/maps.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { WidgetScreenModule } from '../widgetscreen/widgetscreen.module';
     OnboardingScreensModule,
     WidgetModule,
     WidgetScreenModule,
+    MapsModule, // Add MapsModule to the imports
   ],
   controllers: [MobileAppController],
   providers: [

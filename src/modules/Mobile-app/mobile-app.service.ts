@@ -14,6 +14,7 @@ import { OnboardingScreensService } from '../onboarding-screens/service/onboardi
 import { Repository } from '../Repositories/repository.schema'; // Add this import
 import { Widget } from '../widget/interfaces/widget.interface'; // Possibly remove if no longer needed
 import { WidgetScreenService } from '../widgetscreen/widgetscreen.service'; // <-- you'll likely need to inject this
+import { MapsService } from '../maps/maps.service'; // Import MapsService
 
 @Injectable()
 export class MobileAppService {
@@ -32,6 +33,7 @@ export class MobileAppService {
     private readonly onboardingScreensService: OnboardingScreensService,
     // ADD your WidgetScreenService here:
     private readonly widgetScreenService: WidgetScreenService,
+    private readonly mapsService: MapsService, // Add MapsService to constructor
   ) {}
 
   async create(createMobileAppDto: CreateMobileAppDto): Promise<MobileApp> {
@@ -381,7 +383,6 @@ export class MobileAppService {
 
   // -----------------------------------------------------------------
   // UPDATED getFullMobileAppData to fetch WidgetScreens (populated with widgets)
-  // instead of fetching separate widgets. We remove `widgetModel.find()`.
   // -----------------------------------------------------------------
   async getFullMobileAppData(mobileAppId: string): Promise<any> {
     try {
@@ -399,11 +400,15 @@ export class MobileAppService {
       }
 
       // Gather design, layout, onboarding, normal screens
-      const [appDesign, appLayout, onboardingScreens, screens] = await Promise.all([
+      const [appDesign, appLayout, onboardingScreens, screens, mapData] = await Promise.all([
         this.appDesignModel.findById(mobileApp.appDesignId).exec(),
         this.appLayoutModel.findById(mobileApp.appLayoutId).exec(),
         this.onboardingScreensService.findAllByAppId(mobileAppId),
         this.screenService.findByAppIdForOTA(mobileAppId), // or .findByAppId() if you prefer
+        this.mapsService.getMapData(mobileAppId).catch(err => {
+          this.logger.warn(`Could not fetch map data: ${err.message}`);
+          return null;
+        })
       ]);
 
       // NEW: retrieve the widgetScreens (each with .widgets populated inside the service)
@@ -425,6 +430,7 @@ export class MobileAppService {
         screens,           // normal screens (no widget population)
         onboardingScreens,
         widgetScreens,     // the new array: each includes child widgets
+        mapData,           // include map data for OTA
         repository: repository
           ? {
               repositoryName: repository.repositoryName,

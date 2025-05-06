@@ -601,6 +601,54 @@ export class MapsService {
     }
   }
 
+  // Get complete map data for OTA packs
+  async getMapData(appId: string) {
+    try {
+      const map = await this.getOrCreateMap(appId);
+      
+      // Format the map data for OTA pack
+      return {
+        location: map.location || null,
+        center: map.center || { lat: 51.505, lng: -0.09 },
+        zoom: map.zoom || 15,
+        pins: (map.pins || []).map(pin => ({
+          id: pin.id,
+          lat: pin.lat,
+          lng: pin.lng,
+          title: pin.title,
+          description: pin.description || '',
+          iconId: pin.iconId,
+          iconName: pin.iconName || '',
+          iconCategory: pin.iconCategory || '',
+          color: pin.color || '',
+          createdAt: pin.createdAt.toISOString(),
+          updatedAt: pin.updatedAt.toISOString()
+        })),
+        overlays: (map.overlays || []).map(overlay => ({
+          id: overlay.id,
+          imageUrl: overlay.imageUrl,
+          fileId: overlay.fileId,
+          bounds: {
+            north: overlay.bounds.north,
+            south: overlay.bounds.south,
+            east: overlay.bounds.east,
+            west: overlay.bounds.west
+          },
+          opacity: overlay.opacity,
+          isPositioning: overlay.isPositioning,
+          createdAt: overlay.createdAt.toISOString(),
+          updatedAt: overlay.updatedAt.toISOString()
+        }))
+      };
+    } catch (error) {
+      if (error instanceof BadRequestException || error instanceof NotFoundException) {
+        throw error;
+      }
+      console.error('Error getting map data for OTA:', error);
+      throw new BadRequestException('Failed to get map data for OTA');
+    }
+  }
+
   // Helper method to upload files to ImageKit
   private async uploadToImageKit(file: Express.Multer.File, folder: string) {
     try {
