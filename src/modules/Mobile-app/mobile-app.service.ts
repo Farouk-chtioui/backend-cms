@@ -430,7 +430,8 @@ export class MobileAppService {
         screens,           // normal screens (no widget population)
         onboardingScreens,
         widgetScreens,     // the new array: each includes child widgets
-        mapData,           // include map data for OTA
+        mapData,           // include map data for OTA pack as mapData
+        maps: mapData,     // ALSO include as maps to ensure it's recognized 
         repository: repository
           ? {
               repositoryName: repository.repositoryName,

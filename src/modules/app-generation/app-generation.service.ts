@@ -231,10 +231,86 @@ export class AppGenerationService {
 
       // 8) Build endpoints for new or existing OTA files
       const otaEndpoints = this.generateOtaEndpoints(uploadResults);
+      
+      // Ensure maps endpoint is always included
+      if (!otaEndpoints['maps']) {
+        // Generate a stable ID for maps
+        const shortHash = crypto
+          .createHash('md5')
+          .update(appId)
+          .digest('hex')
+          .slice(0, 8);
+        const stableMapsId = `${shortHash}_maps`
+          .toLowerCase()
+          .replace(/[^a-z0-9._-]/g, '_')
+          .slice(0, 36);
+          
+        otaEndpoints['maps'] = `${process.env.APPWRITE_ENDPOINT}/storage/buckets/${process.env.APPWRITE_OTA_BUCKET_ID}/files/${stableMapsId}/view?project=${process.env.APPWRITE_PROJECT_ID}`;
+        
+        // Also try to upload an empty maps pack if needed
+        try {
+          const mapsPackPath = path.join(packsDir, 'maps_pack.json');
+          if (!fs.existsSync(mapsPackPath)) {
+            // Create default empty maps data
+            const emptyMapData = {
+              location: null,
+              center: { lat: 51.505, lng: -0.09 },
+              zoom: 15,
+              pins: [],
+              overlays: []
+            };
+            fs.writeFileSync(mapsPackPath, JSON.stringify(emptyMapData, null, 2), 'utf8');
+            
+            // Upload it directly
+            const client = new Client()
+              .setEndpoint(process.env.APPWRITE_ENDPOINT)
+              .setProject(process.env.APPWRITE_PROJECT_ID)
+              .setKey(process.env.APPWRITE_API_KEY);
+
+            const storage = new Storage(client);
+            const rawContent = fs.readFileSync(mapsPackPath, 'utf8');
+            
+            // Try to delete if exists
+            try {
+              await storage.deleteFile(process.env.APPWRITE_OTA_BUCKET_ID, stableMapsId);
+            } catch {
+              // Ignore errors if file doesn't exist
+            }
+            
+            // Upload the file
+            const blob = new Blob([rawContent], { type: 'application/json' });
+            const fileObj = new File([blob], `${appId}_maps_pack.json`, {
+              type: 'application/json',
+            });
+            
+            await storage.createFile(
+              process.env.APPWRITE_OTA_BUCKET_ID,
+              stableMapsId,
+              fileObj
+            );
+          }
+        } catch (err) {
+          this.logger.error(`Error creating maps pack: ${err.message}`);
+          // Continue anyway as we've already added the endpoint
+        }
+      }
+      
+      // Create a clean endpoints object with only the required fields
+      const finalEndpoints = {
+        screens: otaEndpoints['screens'],
+        config: otaEndpoints['config'],
+        design: otaEndpoints['design'],
+        layout: otaEndpoints['layout'],
+        onboarding: otaEndpoints['onboarding'],
+        widgetScreens: otaEndpoints['widgetScreens'],
+        maps: otaEndpoints['maps'] // Explicitly include maps
+      };
+      
+      // Write endpoints to file
       const endpointsFilePath = path.join(packsDir, 'endpoints.json');
       await fs.promises.writeFile(
         endpointsFilePath,
-        JSON.stringify(otaEndpoints, null, 2),
+        JSON.stringify(finalEndpoints, null, 2),
         'utf8'
       );
 
@@ -263,9 +339,12 @@ export class AppGenerationService {
           /* ignore if nonexistent */
         }
 
+        // Read the endpoints file we just wrote
         const endpointsContent = await fs.promises.readFile(endpointsFilePath);
         const blob = new Blob([endpointsContent], { type: 'application/json' });
         const customFileName = `${appId}_endpoints.json`;
+        
+        // Upload the endpoints file
         await storage.createFile(
           process.env.APPWRITE_OTA_BUCKET_ID,
           stableEndpointsId,
@@ -273,7 +352,9 @@ export class AppGenerationService {
         );
 
         // Also add a "otaEndpoints.global" link
-        otaEndpoints['global'] = `${process.env.APPWRITE_ENDPOINT}/storage/buckets/${process.env.APPWRITE_OTA_BUCKET_ID}/files/${stableEndpointsId}/view?project=${process.env.APPWRITE_PROJECT_ID}`;
+        finalEndpoints['global'] = `${process.env.APPWRITE_ENDPOINT}/storage/buckets/${process.env.APPWRITE_OTA_BUCKET_ID}/files/${stableEndpointsId}/view?project=${process.env.APPWRITE_PROJECT_ID}`;
+        
+        this.logger.log('OTA endpoints updated successfully');
       } catch (err) {
         this.logger.error(`Failed uploading endpoints file: ${err.message}`);
         
@@ -540,6 +621,21 @@ export class AppGenerationService {
     const concurrencyLimit = 5;
     const tasks: Array<() => Promise<void>> = [];
 
+    // First, make sure 'maps_pack.json' exists and create it if it doesn't
+    const mapsPackPath = path.join(packsDir, 'maps_pack.json');
+    if (!files.includes('maps_pack.json')) {
+      this.logger.log('Missing maps_pack.json, creating a default empty one');
+      const emptyMapData = {
+        location: null,
+        center: { lat: 51.505, lng: -0.09 },
+        zoom: 15,
+        pins: [],
+        overlays: []
+      };
+      fs.writeFileSync(mapsPackPath, JSON.stringify(emptyMapData, null, 2), 'utf8');
+      files.push('maps_pack.json'); // Add it to the files list
+    }
+
     for (const fileName of files) {
       // Skip endpoints.json; we do that after
       if (fileName === 'endpoints.json') {
@@ -553,7 +649,9 @@ export class AppGenerationService {
         const cacheKey = `${appId}_${fileName}`;
 
         // If we forced an OTA update or if MD5 changed, re-upload
-        const isChanged = forceOtaUpdate ||
+        // For maps_pack.json, always re-upload to ensure it's included
+        const isChanged = forceOtaUpdate || 
+          fileName === 'maps_pack.json' ||
           this.otaPackHashCache.get(cacheKey) !== contentHash;
 
         if (!isChanged) {
@@ -688,7 +786,7 @@ export class AppGenerationService {
       this.logger.log(`Deleted existing APK: fileId=${fileId}`);
     } catch (error) {
       this.logger.error(`deleteExistingApk error: ${error.message}`);
-      // Don’t re-throw
+      // Don't re-throw
     }
   }
 
@@ -762,39 +860,140 @@ export class AppGenerationService {
 
   // -----------------------------------------------------------------
   // Generate endpoints for each OTA pack
-  // (Replace "widgets" with "widgetScreens")
   // -----------------------------------------------------------------
   private generateOtaEndpoints(otaUploads: Record<string, string>): Record<string, string> {
     const endpoints: Record<string, string> = {};
     
-    // We need the following packs at minimum
-    const requiredPacks = [
-      'design',
-      'layout',
-      'screens',
-      'onboarding',
-      'config',
-      'widgetScreens',
-      'maps'
-    ];
+    // Define all OTA packs and their default values
+    const otaPacks = {
+      design: { required: true, defaultData: {} },
+      layout: { required: true, defaultData: {} },
+      screens: { required: true, defaultData: [] },
+      onboarding: { required: true, defaultData: [] },
+      config: { required: true, defaultData: {} },
+      widgetScreens: { required: true, defaultData: [] },
+      maps: { 
+        required: true, 
+        defaultData: {
+          location: null,
+          center: { lat: 51.505, lng: -0.09 },
+          zoom: 15,
+          pins: [],
+          overlays: []
+        }
+      }
+    };
     
-    // For each file we uploaded, create an endpoint
+    // Helper function to generate a stable file ID
+    const generateStableFileId = (appId: string, packType: string) => {
+      const shortHash = crypto
+        .createHash('md5')
+        .update(appId)
+        .digest('hex')
+        .slice(0, 8);
+      return `${shortHash}_${packType}`
+        .toLowerCase()
+        .replace(/[^a-z0-9._-]/g, '_')
+        .slice(0, 36);
+    };
+    
+    // Helper function to create endpoint URL
+    const createEndpointUrl = (fileId: string) => 
+      `${process.env.APPWRITE_ENDPOINT}/storage/buckets/${process.env.APPWRITE_OTA_BUCKET_ID}/files/${fileId}/view?project=${process.env.APPWRITE_PROJECT_ID}`;
+    
+    // Get appId from any existing upload
+    const appId = Object.values(otaUploads)[0]?.split('/')[6]?.split('_')[0];
+    this.logger.log(`Generating OTA endpoints for appId: ${appId}`);
+    
+    // First, process all uploaded files
     for (const fileName in otaUploads) {
       const fileId = otaUploads[fileName];
       const packKey = fileName.replace('_pack.json', '');
-      endpoints[packKey] = `${process.env.APPWRITE_ENDPOINT}/storage/buckets/${process.env.APPWRITE_OTA_BUCKET_ID}/files/${fileId}/view?project=${process.env.APPWRITE_PROJECT_ID}`;
+      endpoints[packKey] = createEndpointUrl(fileId);
+      this.logger.log(`Added endpoint for ${packKey} from upload: ${endpoints[packKey]}`);
     }
     
-    // Make sure the required packs all exist in `endpoints`
-    for (const requiredPack of requiredPacks) {
-      const fileName = `${requiredPack}_pack.json`;
-      if (!endpoints[requiredPack] && otaUploads[fileName]) {
-        const fileId = otaUploads[fileName];
-        endpoints[requiredPack] = `${process.env.APPWRITE_ENDPOINT}/storage/buckets/${process.env.APPWRITE_OTA_BUCKET_ID}/files/${fileId}/view?project=${process.env.APPWRITE_PROJECT_ID}`;
+    // Then ensure all required packs have endpoints
+    for (const [packKey, packConfig] of Object.entries(otaPacks)) {
+      if (!endpoints[packKey]) {
+        const fileName = `${packKey}_pack.json`;
+        this.logger.log(`Missing endpoint for ${packKey}, checking uploads...`);
+        
+        // If we have an upload for this pack, use it
+        if (otaUploads[fileName]) {
+          endpoints[packKey] = createEndpointUrl(otaUploads[fileName]);
+          this.logger.log(`Added endpoint for ${packKey} from upload: ${endpoints[packKey]}`);
+        } 
+        // Otherwise, generate a stable ID and endpoint
+        else if (appId) {
+          const stableFileId = generateStableFileId(appId, packKey);
+          endpoints[packKey] = createEndpointUrl(stableFileId);
+          this.logger.log(`Generated stable endpoint for ${packKey}: ${endpoints[packKey]}`);
+          
+          // For maps, ensure we create the default data file
+          if (packKey === 'maps') {
+            this.ensureDefaultMapsPack(appId, stableFileId, packConfig.defaultData);
+          }
+        }
       }
+    }
+
+    // Special handling for maps - ensure it's always included
+    if (!endpoints['maps'] && appId) {
+      this.logger.log('Maps endpoint still missing, forcing creation...');
+      const stableMapsId = generateStableFileId(appId, 'maps');
+      endpoints['maps'] = createEndpointUrl(stableMapsId);
+      this.logger.log(`Forced maps endpoint creation: ${endpoints['maps']}`);
+      this.ensureDefaultMapsPack(appId, stableMapsId, otaPacks.maps.defaultData);
+    }
+
+    // Final verification
+    if (!endpoints['maps']) {
+      this.logger.error('Failed to create maps endpoint!');
+    } else {
+      this.logger.log('Maps endpoint successfully created');
     }
     
     return endpoints;
+  }
+
+  // Helper method to ensure default maps pack exists
+  private async ensureDefaultMapsPack(appId: string, stableFileId: string, defaultData: any) {
+    try {
+      this.logger.log(`Ensuring default maps pack exists for appId: ${appId}, fileId: ${stableFileId}`);
+      
+      const client = new Client()
+        .setEndpoint(process.env.APPWRITE_ENDPOINT)
+        .setProject(process.env.APPWRITE_PROJECT_ID)
+        .setKey(process.env.APPWRITE_API_KEY);
+
+      const storage = new Storage(client);
+      
+      // Try to get existing file
+      try {
+        await storage.getFile(process.env.APPWRITE_OTA_BUCKET_ID, stableFileId);
+        this.logger.log(`Maps pack already exists with ID: ${stableFileId}`);
+        return;
+      } catch {
+        // File doesn't exist, create it
+        this.logger.log(`Creating new maps pack with ID: ${stableFileId}`);
+        const blob = new Blob([JSON.stringify(defaultData, null, 2)], { type: 'application/json' });
+        const fileObj = new File([blob], `${appId}_maps_pack.json`, {
+          type: 'application/json',
+        });
+        
+        await storage.createFile(
+          process.env.APPWRITE_OTA_BUCKET_ID,
+          stableFileId,
+          fileObj
+        );
+        
+        this.logger.log(`Successfully created maps pack with ID: ${stableFileId}`);
+      }
+    } catch (err) {
+      this.logger.error(`Error ensuring default maps pack: ${err.message}`);
+      // Don't throw - we want to continue even if this fails
+    }
   }
 
   // -----------------------------------------------------------------
@@ -872,7 +1071,7 @@ export class AppGenerationService {
   }
 
   // -----------------------------------------------------------------
-  // Poll GH for a new run, wait for completion, find “flutter-release-apk” artifact
+  // Poll GH for a new run, wait for completion, find "flutter-release-apk" artifact
   // -----------------------------------------------------------------
   async trackWorkflow(appId: string) {
     const token = process.env.GITHUB_TOKEN;
@@ -915,7 +1114,7 @@ export class AppGenerationService {
       await new Promise((resolve) => setTimeout(resolve, 10000));
     }
 
-    // 3) find “flutter-release-apk” artifact
+    // 3) find "flutter-release-apk" artifact
     const artifactsUrl = `https://api.github.com/repos/${repoOwner}/${repoName}/actions/runs/${runId}/artifacts`;
     let artifact: any = null;
     for (let k = 0; k < 10; k++) {
@@ -1010,14 +1209,19 @@ export class AppGenerationService {
       };
     });
     
-    // 3) Build map data OTA pack
-    const mapData = fullAppData.mapData || {
+    // 3) Build map data OTA pack - Check both mapData and maps properties
+    const mapData = fullAppData.maps || fullAppData.mapData || {
       location: null,
       center: { lat: 51.505, lng: -0.09 },
       zoom: 15,
       pins: [],
       overlays: []
     };
+    
+    this.logger.log(`Map data loaded for OTA pack: ${JSON.stringify(mapData ? {
+      pinsCount: mapData.pins?.length || 0,
+      overlaysCount: mapData.overlays?.length || 0
+    } : 'null')}`);
   
     // 4) Build final packs, referencing each key as needed
     const packs: Record<string, any> = {
