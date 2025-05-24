@@ -3,6 +3,8 @@ import {
   Post, 
   Get, 
   Patch,
+  Put,
+  Delete,
   Body, 
   Param, 
   BadRequestException,
@@ -137,7 +139,6 @@ export class UsersController {
       throw new BadRequestException(error.message);
     }
   }
-
   @Patch(':userId')
   async updateUser(@Param('userId') userId: string, @Body() updateData: Partial<User>) {
     try {
@@ -150,6 +151,17 @@ export class UsersController {
     }
   }
 
+  @Put(':userId')
+  async editUser(@Param('userId') userId: string, @Body() updateData: Partial<User>) {
+    try {
+      const updatedUser = await this.usersService.updateUser(userId, updateData);
+      const userResponse = updatedUser.toObject();
+      delete userResponse.password;
+      return userResponse;
+    } catch (error) {
+      throw new BadRequestException(error.message);
+    }
+  }
   @Post(':id/profile-image')
   @UseInterceptors(FileInterceptor('file', {
     storage: undefined // This ensures memory storage is used
@@ -168,5 +180,15 @@ export class UsersController {
   ) {
     const imageUrl = await this.usersService.updateProfileImage(userId, file);
     return { url: imageUrl }; // Return as JSON object
+  }
+
+  @Delete(':userId')
+  async deleteUser(@Param('userId') userId: string) {
+    try {
+      await this.usersService.deleteUser(userId);
+      return { message: 'User deleted successfully' };
+    } catch (error) {
+      throw new BadRequestException(error.message);
+    }
   }
 }

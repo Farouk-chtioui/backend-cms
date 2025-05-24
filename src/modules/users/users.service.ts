@@ -71,13 +71,12 @@ export class UsersService {
 
     if (existingUser) {
       throw new BadRequestException('User with email or username already exists');
-    }
-
-    const hashedPassword = await bcrypt.hash(password, 10);
+    }    const hashedPassword = await bcrypt.hash(password, 10);
     const newUser = new this.userModel({
       email,
       username,
       password: hashedPassword,
+      role: role, // Add the role parameter
       profileImage: profileImage || null,
       joinDate: new Date(),
       lastActive: new Date(),
@@ -430,9 +429,28 @@ export class UsersService {
       throw new BadRequestException(`Failed to sync user repositories: ${error.message}`);
     }
   }
-
   // ----- findAdminUsers -----
   async findAdminUsers(): Promise<User[]> {
     return this.userModel.find({ role: 'admin' }).exec();
+  }
+
+  // ----- deleteUser -----
+  async deleteUser(userId: string): Promise<void> {
+    try {
+      const userObjectId = this.ensureObjectId(userId);
+      const user = await this.userModel.findById(userObjectId);
+
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
+
+      // Delete the user
+      await this.userModel.findByIdAndDelete(userObjectId);
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new BadRequestException('Failed to delete user');
+    }
   }
 }
