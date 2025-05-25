@@ -57,32 +57,57 @@ export class TeamsService {
         if (!hasAccess) {
           throw new ForbiddenException('You do not have access to create teams in this repository');
         }
+      }      // Resolve email addresses, usernames, or user IDs to user IDs before creating the team
+      let resolvedMemberIds: Types.ObjectId[] = [];
+      if (members && members.length > 0) {
+        for (const member of members) {
+          // Check if it's an email address
+          if (member.includes('@')) {
+            try {
+              const user = await this.usersService.findOneByEmail(member);
+              resolvedMemberIds.push(new Types.ObjectId(user._id.toString()));
+            } catch (error) {
+              console.warn(`Could not find user with email: ${member}`);
+              // Skip this member if user not found
+              continue;
+            }
+          } else if (Types.ObjectId.isValid(member)) {
+            // It's already a valid user ID, convert to ObjectId
+            try {
+              resolvedMemberIds.push(new Types.ObjectId(member));
+            } catch (error) {
+              console.warn(`Invalid user ID format: ${member}`);
+              continue;
+            }
+          } else {
+            // It might be a username, try to find by username
+            try {
+              const user = await this.usersService.findOneByUsername(member);
+              resolvedMemberIds.push(new Types.ObjectId(user._id.toString()));
+            } catch (error) {
+              console.warn(`Could not find user with username: ${member}`);
+              // Skip this member if user not found
+              continue;
+            }
+          }
+        }
       }
-      
+
       const newTeam = new this.teamModel({
         repositoryId: new Types.ObjectId(repositoryId),
         ownerId: new Types.ObjectId(ownerId),
         name,
         description: description || '',
-        members: members ? members.map(id => typeof id === 'string' ? new Types.ObjectId(id) : id) : [],
+        members: resolvedMemberIds,
         messages: [],
         notes: []
       });
       
       const savedTeam = await newTeam.save();
-      
-      // Update team membership in socket gateway for all members
-      if (members && members.length > 0) {
-        for (const memberId of members) {
-          let memberIdStr: string;
-          if (typeof memberId === 'string') {
-            memberIdStr = memberId;
-          } else if (memberId && typeof memberId === 'object' && 'toString' in memberId) {
-            memberIdStr = (memberId as Types.ObjectId).toString();
-          } else {
-            console.error('Invalid member ID format:', memberId);
-            continue; // Skip this invalid member
-          }
+        // Update team membership in socket gateway for all resolved members
+      if (resolvedMemberIds && resolvedMemberIds.length > 0) {
+        for (const memberId of resolvedMemberIds) {
+          const memberIdStr = memberId.toString();
           
           // Update socket gateway team membership
           await this.teamNotificationsGateway.refreshUserTeamMemberships(memberIdStr);
@@ -973,10 +998,10 @@ export class TeamsService {
       
       for (const memberId of members) {
         let memberIdStr: string;
-        
-        if (typeof memberId === 'string') {
-          // For strings, check if it's an email or an ID
+          if (typeof memberId === 'string') {
+          // For strings, check if it's an email, username, or ID
           if (memberId.includes('@')) {
+            // It's an email address
             try {
               const user = await this.usersService.findOneByEmail(memberId);
               if (!user) continue;
@@ -995,7 +1020,8 @@ export class TeamsService {
             } catch (e) {
               continue; // Skip if user not found by email
             }
-          } else {
+          } else if (Types.ObjectId.isValid(memberId)) {
+            // It's a valid user ID
             memberIdStr = memberId;
             
             // Sync repositories for the user
@@ -1011,6 +1037,26 @@ export class TeamsService {
               }
             } catch (error) {
               console.error(`Failed to sync repositories for user ${memberIdStr}:`, error);
+            }
+          } else {
+            // It might be a username
+            try {
+              const user = await this.usersService.findOneByUsername(memberId);
+              if (!user) continue;
+              memberIdStr = user._id.toString();
+              
+              // Sync repositories for the user
+              await this.usersService.syncUserRepositories(memberIdStr);
+              
+              // Also explicitly add the repository to the user
+              try {
+                await this.usersService.addRepositoryToUser(memberIdStr, team.repositoryId.toString());
+              } catch (error) {
+                // Might fail if repository is already added, which is fine
+                console.log(`Repository might already be added to user: ${error.message}`);
+              }
+            } catch (e) {
+              continue; // Skip if user not found by username
             }
           }
         } else if (memberId && typeof memberId === 'object' && 'toString' in memberId) {

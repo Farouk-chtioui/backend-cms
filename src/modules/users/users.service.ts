@@ -453,4 +453,20 @@ export class UsersService {
       throw new BadRequestException('Failed to delete user');
     }
   }
+
+  // ----- findOneByUsername -----
+  async findOneByUsername(username: string): Promise<User> {
+    try {
+      const user = await this.userModel.findOne({ username }).exec();
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
+      return user;
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new BadRequestException('Failed to find user');
+    }
+  }
 }
