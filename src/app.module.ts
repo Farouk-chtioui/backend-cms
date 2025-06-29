@@ -22,11 +22,30 @@ import { TeamNotificationsModule } from './modules/team-notifications/team-notif
 import { FcmModule } from './modules/FCM/fcm.module';
 import { AppBuildNotificationsModule } from './modules/app-build-notifications/app-build-notifications.module';
 import { TagModule } from './modules/tag/tag.module'; // Import TagModule
+import { ActivityModule } from './modules/activity/activity.module'; // Import ActivityModule
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    MongooseModule.forRoot(process.env.MONGODB_URI),
+    MongooseModule.forRoot(process.env.MONGODB_URI, {
+      connectionFactory: (connection) => {
+        connection.on('connected', () => {
+          console.log('MongoDB connection established successfully');
+        });
+        connection.on('error', (err) => {
+          console.error('MongoDB connection error:', err);
+        });
+        return connection;
+      },
+      // Add connection options for reliability
+      socketTimeoutMS: 45000,
+      connectTimeoutMS: 45000,
+      serverSelectionTimeoutMS: 45000,
+      heartbeatFrequencyMS: 30000,
+      maxPoolSize: 10,
+      retryAttempts: 5,
+      retryDelay: 5000,
+    }),
     UsersModule,
     AuthModule,
     RepositoriesModule,
@@ -45,6 +64,7 @@ import { TagModule } from './modules/tag/tag.module'; // Import TagModule
     TeamNotificationsModule,
     AppBuildNotificationsModule,
     TagModule, // Add TagModule to the imports
+    ActivityModule, // Add ActivityModule to the imports
   ],
   providers: [LiveUpdatesGateway, ImageKitService],
 })

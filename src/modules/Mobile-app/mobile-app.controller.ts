@@ -14,6 +14,7 @@ import { MobileAppService } from './mobile-app.service';
 import { CreateMobileAppDto } from './dto/create-mobile-app.dto';
 import { AppDesign } from '../appDesign/appDesign.schema';
 import { AppLayout } from '../appLayout/appLayout.schema';
+import { ActivityService } from '../activity/activity.service';
 
 // Define a DTO for the generate endpoint
 class GenerateAppDto {
@@ -24,7 +25,10 @@ class GenerateAppDto {
 export class MobileAppController {
   private readonly logger = new Logger(MobileAppController.name);
 
-  constructor(private readonly mobileAppService: MobileAppService) {}
+  constructor(
+    private readonly mobileAppService: MobileAppService,
+    private readonly activityService: ActivityService,
+  ) {}
 
   @Post()
   async create(@Body() createMobileAppDto: CreateMobileAppDto) {
@@ -196,6 +200,23 @@ export class MobileAppController {
       this.logger.error(`Failed to get last publish info: ${error.message}`);
       throw new HttpException(
         `Failed to get last publish info: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  // NEW ENDPOINT: Get activities for a mobile app
+  @Get(':id/activities')
+  async getActivitiesForMobileApp(@Param('id') mobileAppId: string) {
+    try {
+      const activities = await this.activityService.findByMobileAppId(mobileAppId);
+      return {
+        activities,
+      };
+    } catch (error) {
+      this.logger.error(`Failed to get activities: ${error.message}`);
+      throw new HttpException(
+        `Failed to get activities: ${error.message}`,
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }

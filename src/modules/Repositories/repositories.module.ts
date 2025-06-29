@@ -12,7 +12,7 @@ import { ImageKitService } from '../../shared/imagekit.service';
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: Repository.name, schema: RepositorySchema }]),
-    MobileAppModule, // Import MobileAppModule for MobileApp-related services
+    forwardRef(() => MobileAppModule), // Use forwardRef for MobileAppModule
     AppDesignModule,
     AppLayoutModule,
     forwardRef(()=>UsersModule)

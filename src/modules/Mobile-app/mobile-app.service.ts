@@ -15,6 +15,7 @@ import { Repository } from '../Repositories/repository.schema'; // Add this impo
 import { Widget } from '../widget/interfaces/widget.interface'; // Possibly remove if no longer needed
 import { WidgetScreenService } from '../widgetscreen/widgetscreen.service'; // <-- you'll likely need to inject this
 import { MapsService } from '../maps/maps.service'; // Import MapsService
+import { ActivityService } from '../activity/activity.service'; // Import ActivityService
 
 @Injectable()
 export class MobileAppService {
@@ -34,6 +35,7 @@ export class MobileAppService {
     // ADD your WidgetScreenService here:
     private readonly widgetScreenService: WidgetScreenService,
     private readonly mapsService: MapsService, // Add MapsService to constructor
+    private readonly activityService: ActivityService, // Add ActivityService to constructor
   ) {}
 
   async create(createMobileAppDto: CreateMobileAppDto): Promise<MobileApp> {
@@ -507,6 +509,7 @@ export class MobileAppService {
   ): Promise<any> {
     try {
       const mobileAppId = fullAppData.mobileApp?._id;
+      const userEmail = fullAppData.mobileApp?.userEmail || 'unknown@example.com';
 
       // Clear previous build status if doing a full rebuild or force rebuild is requested
       if (!updateOnlyOta || forceRebuild) {
@@ -527,6 +530,18 @@ export class MobileAppService {
       if (mobileAppId) {
         this.logger.log(`Updating last publish info: ${mobileAppId} by ${username}`);
         await this.updateLastPublishInfo(mobileAppId, username);
+        
+        // Record activity for this publish
+        await this.activityService.recordPublishActivity(
+          mobileAppId.toString(), 
+          username, 
+          userEmail,
+          {
+            otaOnly: updateOnlyOta,
+            forceRebuild,
+            forceOtaUpdate
+          }
+        );
       }
 
       // Pass username to fullAppData for notifications
@@ -567,6 +582,22 @@ export class MobileAppService {
         apkUrl: result.apkUrl,
         qrCodeDataUrl: result.qrCodeDataUrl,
       });
+      
+      // Get the mobile app to access user details
+      const mobileApp = await this.mobileAppModel.findById(mobileAppId).exec();
+      if (mobileApp && mobileApp.lastPublish) {
+        // Record activity for this build completion
+        await this.activityService.recordBuildActivity(
+          mobileAppId,
+          mobileApp.lastPublish.username || 'System',
+          mobileApp.userEmail || 'unknown@example.com',
+          {
+            apkUrl: result.apkUrl,
+            buildCompleted: true
+          }
+        );
+      }
+      
       return result;
     } catch (error) {
       this.logger.error(`Error updating build result for MobileApp ${mobileAppId}: ${error.message}`);

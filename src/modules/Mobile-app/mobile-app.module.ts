@@ -16,6 +16,7 @@ import { WidgetModule } from '../widget/widget.module';
 import { WidgetSchema } from '../widget/schemas/widget.schema';
 import { WidgetScreenModule } from '../widgetscreen/widgetscreen.module';
 import { MapsModule } from '../maps/maps.module';
+import { ActivityModule } from '../activity/activity.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { MapsModule } from '../maps/maps.module';
     WidgetModule,
     WidgetScreenModule,
     MapsModule, // Add MapsModule to the imports
+    forwardRef(() => ActivityModule), // Import the Activity Module with forwardRef
   ],
   controllers: [MobileAppController],
   providers: [
