@@ -170,6 +170,11 @@ import {
             cachedTeams.forEach(teamId => {
               client.join(`team-${teamId}`);
             });
+            
+            // Notify client they've been connected to chat rooms
+            client.emit('chatRoomsJoined', {
+              teams: Array.from(cachedTeams)
+            });
           }
         }
       } else {
@@ -185,6 +190,12 @@ import {
           cachedTeams.forEach(teamId => {
             client.join(`team-${teamId}`);
           });
+          
+          // Notify client they've been connected to chat rooms
+          client.emit('chatRoomsJoined', {
+            teams: Array.from(cachedTeams)
+          });
+          
           return; // Skip DB query if we have cached data
         }
         
@@ -204,6 +215,11 @@ import {
           this.userTeams.set(userId, teamSet);
           // Update last refresh time
           this.lastRefreshTime.set(userId, Date.now());
+          
+          // Notify client they've been connected to chat rooms
+          client.emit('chatRoomsJoined', {
+            teams: Array.from(teamSet)
+          });
         }
       } catch (error) {
         this.logger.error(`Error fetching teams for user ${userId}:`, error);
@@ -375,6 +391,13 @@ import {
               teamIdsToJoin.forEach(teamId => {
                 socket.join(`team-${teamId}`);
               });
+              
+              // Notify client about updated chat rooms
+              socket.emit('chatRoomsUpdated', {
+                teams: Array.from(teamSet),
+                added: teamIdsToJoin,
+                removed: roomsToLeave.map(room => room.replace('team-', ''))
+              });
             }
           }
         }
@@ -523,7 +546,14 @@ import {
           userId,
           socketCount: sockets.length,
           teams: Array.from(this.userTeams.get(userId) || [])
-        }))
+        })),
+        // Add chat-specific information
+        activeChatRooms: Array.from(this.server.sockets.adapter.rooms.entries())
+          .filter(([room]) => room.startsWith('team-'))
+          .map(([room, sockets]) => ({
+            room,
+            userCount: sockets.size
+          }))
       };
     }
     
@@ -536,5 +566,124 @@ import {
       if (this.notificationQueueTimer) {
         clearInterval(this.notificationQueueTimer);
       }
+    }
+  
+    // Handle incoming chat messages from clients
+    @SubscribeMessage('sendChatMessage')
+    async handleChatMessage(client: Socket, payload: { 
+      teamId: string, 
+      userId: string, 
+      message: string,
+      userName?: string,
+      timestamp?: number 
+    }): Promise<void> {
+      try {
+        const { teamId, userId, message, userName } = payload;
+        
+        // Validate required fields
+        if (!teamId || !userId || !message) {
+          client.emit('chatError', { message: 'Missing required fields for chat message' });
+          return;
+        }
+        
+        // Verify user is a member of this team before broadcasting their message
+        if (!this.isUserTeamMember(userId, teamId)) {
+          this.logger.warn(`User ${userId} attempted to send message to team ${teamId} but is not a member`);
+          client.emit('chatError', { message: 'You are not a member of this team' });
+          return;
+        }
+        
+        // Create the chat message object
+        const chatMessage = {
+          type: 'chat',
+          teamId,
+          userId,
+          userName: userName || userId, // Use provided userName or fallback to userId
+          message,
+          timestamp: payload.timestamp || Date.now()
+        };
+        
+        // Broadcast to all members of the team including sender (for receipt confirmation)
+        this.server.to(`team-${teamId}`).emit('chatMessage', chatMessage);
+        
+        // Log for debugging (can be removed in production)
+        this.logger.debug(`Chat message sent to team ${teamId} from user ${userId}`);
+      } catch (error) {
+        this.logger.error(`Error handling chat message:`, error);
+        client.emit('chatError', { message: 'Error processing chat message' });
+      }
+    }
+    
+    // Subscribe to a specific chat room for history retrieval
+    @SubscribeMessage('joinChatRoom')
+    async handleJoinChatRoom(client: Socket, payload: { 
+      teamId: string, 
+      userId: string 
+    }): Promise<void> {
+      try {
+        const { teamId, userId } = payload;
+        
+        // Ensure user is a member of this team
+        if (!this.isUserTeamMember(userId, teamId)) {
+          client.emit('chatError', { message: 'Cannot join chat: you are not a member of this team' });
+          return;
+        }
+        
+        // The room name uses the same format as team notifications
+        const roomName = `team-${teamId}`;
+        
+        // Join the room (if not already joined)
+        if (!client.rooms.has(roomName)) {
+          client.join(roomName);
+        }
+        
+        // Emit an event to let the client know they've joined successfully
+        client.emit('chatJoined', { teamId });
+        
+        // Notify other room members that someone joined (optional)
+        client.to(roomName).emit('userJoinedChat', { 
+          teamId, 
+          userId,
+          timestamp: Date.now()
+        });
+      } catch (error) {
+        this.logger.error(`Error joining chat room:`, error);
+        client.emit('chatError', { message: 'Error joining chat room' });
+      }
+    }
+    
+    // Handle typing indicators for better real-time experience
+    @SubscribeMessage('typingIndicator')
+    handleTypingIndicator(client: Socket, payload: { 
+      teamId: string, 
+      userId: string, 
+      isTyping: boolean,
+      userName?: string
+    }): void {
+      try {
+        const { teamId, userId, isTyping, userName } = payload;
+        
+        // Verify user is a member of this team
+        if (!this.isUserTeamMember(userId, teamId)) {
+          return; // Silently ignore if not a member
+        }
+        
+        // Broadcast typing status to all other members in the team
+        client.to(`team-${teamId}`).emit('userTyping', {
+          teamId,
+          userId,
+          userName: userName || userId,
+          isTyping,
+          timestamp: Date.now()
+        });
+      } catch (error) {
+        this.logger.error(`Error handling typing indicator:`, error);
+      }
+    }
+    
+    // Method to broadcast a chat message to team members
+    sendChatMessageToTeam(teamId: string, chatMessage: any): void {
+      // Broadcast to the team room
+      this.server.to(`team-${teamId}`).emit('chatMessage', chatMessage);
     }
   }
